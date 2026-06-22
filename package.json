@@ -1,6 +1,6 @@
 {
   "name": "quan-ly-reup",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Hệ thống quản lý team reup video - quản lý key YouTube, nhân sự, năng suất và lợi nhuận",
   "main": "server.js",
   "type": "commonjs",
