@@ -551,6 +551,16 @@ async function renderTiktok() {
     tiktokCache.map((t) => [t.name, t.tiktok_id || '', t.url, t.country || '', t.followers, t.likes, t.video_count, t.total_views || '', t.monetized ? 'Có' : 'Chưa', t.paypal_added ? 'Có' : 'Chưa', t.verified ? 'Có' : 'Chưa', (TT_STATUS[t.status] || {}).label || t.status, t.source_key_name || '', t.assigned_name || '']));
   const addBtn = el('<button class="btn btn-primary">➕ Thêm kênh TikTok</button>');
   addBtn.onclick = () => tiktokForm();
+  if (State.user.role === 'admin') {
+    const syncBtn = el('<button class="btn btn-ghost">🔄 Cập nhật tất cả</button>');
+    syncBtn.onclick = async () => {
+      try {
+        await api('/tiktok/sync-all', { method: 'POST', body: {} });
+        toast('Đang cập nhật số liệu tất cả kênh ở hậu trường… vài phút nữa làm mới trang để xem');
+      } catch (e) { toast(e.message, 'err'); }
+    };
+    $('#topbar-right').appendChild(syncBtn);
+  }
   $('#topbar-right').appendChild(expBtn);
   $('#topbar-right').appendChild(addBtn);
 

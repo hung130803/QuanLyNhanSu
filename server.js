@@ -175,6 +175,29 @@ async function fetchTiktokInfo(url) {
     name: null, tiktok_id: null, avatar: null, bio: null, country: null,
     followers: 0, likes: 0, video_count: 0,
   };
+  // Ưu tiên API tikwm (miễn phí, chạy được cả trên cloud)
+  const handleM = String(url).match(/@([^/?#]+)/);
+  if (handleM) {
+    try {
+      const ctrl = new AbortController();
+      const tm = setTimeout(() => ctrl.abort(), 12000);
+      const res = await fetch('https://www.tikwm.com/api/user/info?unique_id=' + encodeURIComponent(handleM[1]), { headers: { 'User-Agent': UA }, signal: ctrl.signal });
+      clearTimeout(tm);
+      const j = await res.json();
+      if (j && j.code === 0 && j.data && j.data.stats) {
+        const u = j.data.user || {}, s = j.data.stats;
+        r.tiktok_id = u.uniqueId || handleM[1];
+        r.name = decodeText(u.nickname || handleM[1]);
+        r.avatar = u.avatarLarger || u.avatarMedium || u.avatarThumb || null;
+        r.bio = decodeText(u.signature || '');
+        r.followers = Number(s.followerCount) || 0;
+        r.likes = Number(s.heartCount) || 0;
+        r.video_count = Number(s.videoCount) || 0;
+        return r;
+      }
+    } catch (e) { console.warn('tikwm lỗi:', e.message); }
+  }
+  // Dự phòng: tự cào trang (cũ)
   try {
     const html = await getHtml(url);
     const pick = (re) => { const m = html.match(re); return m ? m[1] : null; };
@@ -566,6 +589,51 @@ app.delete('/api/tiktok/:id', auth, (req, res) => {
   db.prepare('DELETE FROM tiktok_channels WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
+
+// ĐỒNG BỘ TẤT CẢ kênh (chạy ngầm) — gọi bởi admin (nút) hoặc cron (SYNC_TOKEN)
+let syncing = false;
+let lastSync = { at: null, total: 0, ok: 0, running: false };
+async function syncAllTiktok() {
+  if (syncing) return;
+  syncing = true;
+  const chans = db.prepare('SELECT id, url FROM tiktok_channels').all();
+  lastSync = { at: new Date().toISOString(), total: chans.length, ok: 0, running: true };
+  try {
+    for (const c of chans) {
+      try {
+        const info = await fetchTiktokInfo(c.url);
+        if (info.followers || info.likes || info.video_count) {
+          db.prepare(
+            `UPDATE tiktok_channels SET followers=?, likes=?, video_count=?, avatar=COALESCE(?,avatar), last_synced=datetime('now'), updated_at=datetime('now') WHERE id=?`
+          ).run(info.followers, info.likes, info.video_count, info.avatar, c.id);
+          saveSnapshot(c.id, info.followers, info.likes, info.video_count);
+          lastSync.ok++;
+        }
+      } catch (_) {}
+      await new Promise((r) => setTimeout(r, 700)); // throttle nhẹ tránh bị giới hạn
+    }
+  } finally {
+    syncing = false;
+    lastSync.running = false;
+    lastSync.at = new Date().toISOString();
+  }
+}
+
+app.post('/api/tiktok/sync-all', (req, res) => {
+  const tok = (req.headers.authorization || '').replace(/^Bearer /, '');
+  const isCron = process.env.SYNC_TOKEN && tok === process.env.SYNC_TOKEN;
+  let isAdmin = false;
+  if (!isCron && tok) {
+    const u = db.prepare('SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?').get(tok);
+    isAdmin = u && u.role === 'admin';
+  }
+  if (!isCron && !isAdmin) return res.status(401).json({ error: 'Không có quyền' });
+  if (syncing) return res.json({ ok: true, message: 'Đang đồng bộ rồi', lastSync });
+  syncAllTiktok(); // chạy ngầm, không chặn
+  res.json({ ok: true, message: 'Đã bắt đầu đồng bộ ngầm' });
+});
+
+app.get('/api/tiktok/sync-status', auth, (req, res) => res.json(lastSync));
 
 // ============ NHẬT KÝ VIDEO ============
 app.get('/api/videologs', auth, (req, res) => {

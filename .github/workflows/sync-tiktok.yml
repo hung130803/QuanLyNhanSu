@@ -1,0 +1,17 @@
+# Tự động đồng bộ số liệu TikTok cho tất cả kênh, mỗi 6 tiếng
+name: Sync TikTok stats
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # mỗi 6 tiếng (giờ UTC)
+  workflow_dispatch:         # cho phép bấm chạy tay
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gọi đồng bộ
+        run: |
+          curl -sS -X POST https://reupmanager.fly.dev/api/tiktok/sync-all \
+            -H "Authorization: Bearer ${{ secrets.SYNC_TOKEN }}" \
+            --max-time 60
