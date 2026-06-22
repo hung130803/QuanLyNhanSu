@@ -1,0 +1,25 @@
+# fly.toml — cấu hình chạy app trên Fly.io
+# LƯU Ý: "app" phải là tên DUY NHẤT toàn cầu. Nếu bị trùng, đổi thành tên khác.
+app = "reupmanager"
+primary_region = "sin"   # Singapore — gần Việt Nam nhất
+
+[build]
+
+[env]
+  DATA_DIR = "/data"      # nơi lưu dữ liệu (gắn với ổ đĩa bền bên dưới)
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0   # ngủ khi không có ai dùng -> tiết kiệm (tự bật lại khi có người vào)
+
+# Ổ đĩa bền: dữ liệu (file reup.db) nằm ở đây, KHÔNG mất khi cập nhật
+[mounts]
+  source = "reup_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
