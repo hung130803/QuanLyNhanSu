@@ -654,7 +654,12 @@ function tiktokForm(ch = null) {
       ${isEdit ? '' : '<div class="hint">Dán link đầy đủ, hoặc chỉ cần gõ ID kênh (vd: <b>@tenkenh</b>) rồi bấm "Lấy thông tin".</div>'}
       <div id="tt-preview"></div>
     </div>
-    ${isEdit ? `<div class="form-row"><label>Tên kênh</label><input id="tt-name" value="${esc(ch.name)}"></div>` : '<input type="hidden" id="tt-name">'}
+    <div class="form-row"><label>Tên kênh</label><input id="tt-name" value="${esc(ch?.name || '')}" placeholder="tự điền khi bấm 'Lấy thông tin', hoặc gõ tay"></div>
+    <div class="form-grid">
+      <div class="form-row"><label>Follower</label><input type="number" id="tt-followers" min="0" value="${ch?.followers ?? ''}"></div>
+      <div class="form-row"><label>Tym (tim)</label><input type="number" id="tt-likes" min="0" value="${ch?.likes ?? ''}"></div>
+    </div>
+    <div class="form-row"><label>Số video</label><input type="number" id="tt-vcount" min="0" value="${ch?.video_count ?? ''}"></div>
     <div class="form-grid">
       <div class="form-row"><label>Quốc gia (Creator Rewards)</label><select id="tt-country">${countryOpts}</select></div>
       <div class="form-row"><label>Trạng thái</label><select id="tt-status">${statusOptions}</select></div>
@@ -700,8 +705,11 @@ function tiktokForm(ch = null) {
       try {
         const info = await api('/tiktok/preview', { method: 'POST', body: { url } });
         pdata = info;
-        if (info.name) form.querySelector('#tt-name').value = info.name;
         if (info.url) form.querySelector('#tt-url').value = info.url;
+        if (info.name) form.querySelector('#tt-name').value = info.name;
+        if (info.followers) form.querySelector('#tt-followers').value = info.followers;
+        if (info.likes) form.querySelector('#tt-likes').value = info.likes;
+        if (info.video_count) form.querySelector('#tt-vcount').value = info.video_count;
         if (info.country) {
           const sel = form.querySelector('#tt-country');
           if (![...sel.options].some((o) => o.value === info.country))
@@ -709,14 +717,20 @@ function tiktokForm(ch = null) {
           sel.value = info.country;
         }
         const dupWarn = info.duplicate ? `<div class="dup-warn">⚠️ <b>Kênh này đã có!</b> "${esc(info.duplicate.name)}" do ${esc(info.duplicate.added_name || '?')} thêm. Không nên thêm trùng.</div>` : '';
-        pv.innerHTML = dupWarn + `<div class="preview-box" style="flex-direction:column;align-items:stretch">
-          <div style="display:flex;align-items:center;gap:12px">
-            ${info.avatar ? `<img src="${esc(info.avatar)}">` : ''}
-            <div><div class="pv-name">${esc(info.name || '')} ${flag(info.country)}</div><div class="pv-sub text-accent">✓ Đã lấy được thông tin</div></div>
-          </div>
-          <div class="ch-meta">👥 ${fmtCompact(info.followers)} follow &nbsp;•&nbsp; ❤️ ${fmtCompact(info.likes)} tym &nbsp;•&nbsp; 🎬 ${fmtNum(info.video_count)} video</div>
-          ${info.bio ? `<div class="ch-desc">${esc(info.bio)}</div>` : ''}
-        </div>`;
+        const gotStats = info.followers || info.likes || info.video_count;
+        if (info.name || gotStats) {
+          pv.innerHTML = dupWarn + `<div class="preview-box" style="flex-direction:column;align-items:stretch">
+            <div style="display:flex;align-items:center;gap:12px">
+              ${info.avatar ? `<img src="${esc(info.avatar)}">` : ''}
+              <div><div class="pv-name">${esc(info.name || '')} ${flag(info.country)}</div><div class="pv-sub text-accent">✓ Đã lấy được thông tin</div></div>
+            </div>
+            <div class="ch-meta">👥 ${fmtCompact(info.followers)} follow &nbsp;•&nbsp; ❤️ ${fmtCompact(info.likes)} tym &nbsp;•&nbsp; 🎬 ${fmtNum(info.video_count)} video</div>
+            ${!gotStats ? '<div class="hint text-danger">Lấy được tên nhưng TikTok chặn số liệu. Hãy nhập tay Follower / Tym / Số video bên dưới.</div>' : ''}
+            ${info.bio ? `<div class="ch-desc">${esc(info.bio)}</div>` : ''}
+          </div>`;
+        } else {
+          pv.innerHTML = dupWarn + '<div class="dup-warn">⚠️ Không tự lấy được dữ liệu (TikTok chặn truy cập từ server). Bạn cứ <b>nhập tay</b> Tên kênh + Follower + Tym + Số video bên dưới rồi bấm "Thêm kênh" — vẫn lưu bình thường.</div>';
+        }
       } catch (e) { pv.innerHTML = `<div class="hint text-danger">${esc(e.message)}</div>`; }
     };
   }
@@ -738,11 +752,14 @@ function tiktokForm(ch = null) {
       note: form.querySelector('#tt-note').value.trim(),
     };
     if (!body.url) return toast('Thiếu link/ID kênh', 'err');
+    // Số liệu lấy từ ô nhập (tự điền nếu lấy được, hoặc gõ tay)
+    body.followers = form.querySelector('#tt-followers').value;
+    body.likes = form.querySelector('#tt-likes').value;
+    body.video_count = form.querySelector('#tt-vcount').value;
     try {
       if (isEdit) { await api('/tiktok/' + ch.id, { method: 'PUT', body }); toast('Đã cập nhật'); }
       else {
         body.avatar = pdata.avatar; body.bio = pdata.bio; body.tiktok_id = pdata.tiktok_id;
-        body.followers = pdata.followers; body.likes = pdata.likes; body.video_count = pdata.video_count;
         await api('/tiktok', { method: 'POST', body }); toast('Đã thêm kênh TikTok');
       }
       closeModal(); renderTiktok();

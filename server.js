@@ -19,7 +19,12 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: '256kb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+// Chống cache file giao diện -> trình duyệt luôn lấy bản mới nhất sau khi cập nhật
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, filePath) => {
+    if (/\.(html|js|css)$/i.test(filePath)) res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+  },
+}));
 
 // Chống dò mật khẩu: giới hạn số lần đăng nhập sai theo IP
 const loginAttempts = new Map();
@@ -187,6 +192,18 @@ async function fetchTiktokInfo(url) {
     r.video_count = num(/"videoCount":(\d+)/);
   } catch (e) {
     console.warn('fetchTiktokInfo lỗi:', e.message);
+  }
+  // Dự phòng: nếu trang bị chặn (server cloud), thử oEmbed để lấy ít nhất tên + ảnh
+  if (!r.name) {
+    try {
+      const o = await fetch('https://www.tiktok.com/oembed?url=' + encodeURIComponent(url), { headers: { 'User-Agent': UA } });
+      if (o.ok) {
+        const j = await o.json();
+        r.name = j.author_name || j.title || r.name;
+        r.avatar = r.avatar || j.thumbnail_url || null;
+        if (!r.tiktok_id && j.author_url) { const m = j.author_url.match(/@([^/?#]+)/); if (m) r.tiktok_id = m[1]; }
+      }
+    } catch (_) {}
   }
   return r;
 }
@@ -506,9 +523,9 @@ app.post('/api/tiktok', auth, async (req, res) => {
 app.put('/api/tiktok/:id', auth, (req, res) => {
   const t = db.prepare('SELECT * FROM tiktok_channels WHERE id = ?').get(req.params.id);
   if (!t) return res.status(404).json({ error: 'Không tìm thấy' });
-  const { name, url, country, status, source_key_id, assigned_to, note, total_views, monetized, paypal_added, verified } = req.body || {};
+  const { name, url, country, status, source_key_id, assigned_to, note, total_views, monetized, paypal_added, verified, followers, likes, video_count } = req.body || {};
   db.prepare(
-    `UPDATE tiktok_channels SET name=?, url=?, url_norm=?, country=?, status=?, source_key_id=?, assigned_to=?, note=?, total_views=?, monetized=?, paypal_added=?, verified=?, updated_at=datetime('now') WHERE id=?`
+    `UPDATE tiktok_channels SET name=?, url=?, url_norm=?, country=?, status=?, source_key_id=?, assigned_to=?, note=?, total_views=?, monetized=?, paypal_added=?, verified=?, followers=?, likes=?, video_count=?, updated_at=datetime('now') WHERE id=?`
   ).run(
     name ?? t.name, url ?? t.url, normalizeUrl(url ?? t.url),
     country !== undefined ? country : t.country,
@@ -520,6 +537,9 @@ app.put('/api/tiktok/:id', auth, (req, res) => {
     monetized !== undefined ? (monetized ? 1 : 0) : t.monetized,
     paypal_added !== undefined ? (paypal_added ? 1 : 0) : t.paypal_added,
     verified !== undefined ? (verified ? 1 : 0) : t.verified,
+    followers !== undefined && followers !== '' ? Number(followers) : t.followers,
+    likes !== undefined && likes !== '' ? Number(likes) : t.likes,
+    video_count !== undefined && video_count !== '' ? Number(video_count) : t.video_count,
     t.id
   );
   res.json(db.prepare(tiktokWithNames + ' WHERE t.id = ?').get(t.id));
@@ -684,6 +704,7 @@ app.get('/api/stats', auth, (req, res) => {
 
 // SPA fallback
 app.get('*', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, must-revalidate');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 

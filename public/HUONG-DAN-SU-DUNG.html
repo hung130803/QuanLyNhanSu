@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hướng dẫn sử dụng - ReupManager</title>
+<style>
+  body { font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.7; color: #1f2733; max-width: 820px; margin: 0 auto; padding: 30px 22px 60px; background: #f6f7fb; }
+  h1 { font-size: 28px; color: #4b3fd1; margin-bottom: 4px; }
+  h2 { font-size: 20px; margin-top: 34px; padding-bottom: 8px; border-bottom: 2px solid #e6e8f0; color: #2a2350; }
+  h3 { font-size: 16px; margin-top: 20px; color: #4b3fd1; }
+  .sub { color: #6a7385; margin-top: 0; }
+  .card { background: #fff; border: 1px solid #e6e8f0; border-radius: 14px; padding: 18px 22px; margin: 16px 0; box-shadow: 0 2px 10px rgba(40,40,80,.04); }
+  .step { display: flex; gap: 12px; margin: 10px 0; }
+  .num { flex-shrink: 0; width: 26px; height: 26px; border-radius: 8px; background: #6c5ce7; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+  .tag { display: inline-block; background: #efeaff; color: #6c5ce7; font-weight: 600; padding: 1px 9px; border-radius: 6px; font-size: 14px; }
+  .ok { background: #e3f9f1; color: #14a06f; }
+  .warn { background: #fff4e0; color: #b9791a; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; background: #fff; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #eceef4; }
+  th { background: #f3f1fe; color: #4b3fd1; }
+  a.weblink { color: #4b3fd1; font-weight: 700; font-size: 18px; }
+  .note { background: #fff8e6; border-left: 4px solid #f0b429; padding: 12px 16px; border-radius: 8px; margin: 14px 0; font-size: 15px; }
+  code { background: #eef0f6; padding: 1px 7px; border-radius: 5px; font-size: 14px; }
+  ul li { margin: 5px 0; }
+</style>
+</head>
+<body>
+  <h1>🎬 ReupManager — Hướng dẫn sử dụng</h1>
+  <p class="sub">Dành cho nhân viên team reup video. Đọc 5 phút là dùng được.</p>
+
+  <div class="card">
+    <h3 style="margin-top:0">🌐 Vào app ở đâu?</h3>
+    <p>Mở trình duyệt (Chrome/Cốc Cốc...) và vào địa chỉ:</p>
+    <p><a class="weblink" href="https://reupmanager.fly.dev">https://reupmanager.fly.dev</a></p>
+    <p>Đăng nhập bằng <b>tên đăng nhập</b> và <b>mật khẩu</b> mà quản lý (admin) cấp cho bạn.</p>
+    <div class="note">Lần đầu vào hơi chậm vài giây (server đang "thức dậy") — bình thường, đợi xíu là vào được.</div>
+  </div>
+
+  <h2>📋 Các mục chính</h2>
+
+  <h3>1. Tổng quan</h3>
+  <p>Màn hình đầu tiên, cho bạn thấy nhanh:</p>
+  <ul>
+    <li><b>Tổng số Key</b> — kho kênh YouTube chung của cả team.</li>
+    <li><b>Key của tôi đang làm</b> — số key bạn đã nhận.</li>
+    <li><b>Kênh TikTok của tôi</b> — số kênh TikTok bạn đang chạy.</li>
+  </ul>
+  <p>👉 Bấm vào từng ô để mở nhanh trang tương ứng.</p>
+
+  <h3>2. Key YouTube — kho kênh nguồn chung</h3>
+  <p>Đây là danh sách các kênh YouTube để reup. <b>Ai cũng xem được</b>, và <b>nhiều người có thể cùng làm 1 key</b>.</p>
+  <div class="step"><div class="num">1</div><div>Tìm key bạn muốn làm trong danh sách (lọc theo <span class="tag">Chủ đề</span>, hoặc dùng ô tìm kiếm).</div></div>
+  <div class="step"><div class="num">2</div><div>Bấm <span class="tag">✋ Nhận làm</span> ở cột "Người làm" → tên bạn được đánh dấu, mọi người biết bạn đang làm key đó.</div></div>
+  <div class="step"><div class="num">3</div><div>Bấm nút <span class="tag">👁️</span> để xem nội dung kênh (mô tả, video gần đây) trước khi làm.</div></div>
+  <div class="step"><div class="num">4</div><div>Nếu không làm nữa, bấm <span class="tag">↩ tôi bỏ làm</span> để nhả key ra.</div></div>
+  <p><b>Tìm được key ngon?</b> Bấm <span class="tag">➕ Thêm Key</span> ở góc phải → nhập <b>Chủ đề</b> (bắt buộc, vd: rap, gym...) → dán link kênh YouTube → bấm "Lấy thông tin" → "Thêm Key". Cả team sẽ thấy.</p>
+
+  <h3>3. Kênh TikTok — kênh reup của bạn</h3>
+  <p>Nơi quản lý các kênh TikTok bạn đang chạy. <b>Bạn chỉ thấy kênh của mình.</b></p>
+  <div class="step"><div class="num">1</div><div>Bấm <span class="tag">➕ Thêm kênh TikTok</span>.</div></div>
+  <div class="step"><div class="num">2</div><div>Dán <b>link kênh TikTok</b> (hoặc chỉ gõ ID, vd <code>@tenkenh</code>) rồi bấm <span class="tag">🔄 Lấy thông tin</span>.</div></div>
+  <div class="step"><div class="num">3</div><div>Chọn <b>Quốc gia</b> (nước trong chương trình Creator Rewards) và <b>Key YouTube nguồn</b> (kênh bạn reup từ đó — gõ vài chữ để tìm).</div></div>
+  <div class="step"><div class="num">4</div><div>Tích các ô tình trạng: <span class="tag">💰 Đã bật kiếm tiền</span> · <span class="tag">💳 Đã thêm Paypal</span> · <span class="tag">🪪 Đã xác minh (XMDT)</span>.</div></div>
+  <div class="step"><div class="num">5</div><div>Bấm <span class="tag ok">Thêm kênh</span>.</div></div>
+  <div class="note"><b>Lưu ý quan trọng:</b> TikTok chặn server tự lấy số follow/tym, nên bạn <b>nhập tay</b> các ô Follower / Tym / Số video (xem trên trang cá nhân TikTok của kênh rồi điền vào). Cập nhật lại số mỗi khi cần bằng nút <span class="tag">✏️</span> Sửa.</div>
+  <p>1 key YouTube có thể gắn cho <b>nhiều kênh TikTok</b> — cứ reup thoải mái.</p>
+
+  <h3>4. Đổi mật khẩu</h3>
+  <p>Vào mục <span class="tag">⚙️ Cài đặt</span> → nhập mật khẩu cũ + mật khẩu mới → bấm "Đổi mật khẩu". Nên đổi ngay lần đầu đăng nhập.</p>
+
+  <h2>❓ Một số lưu ý</h2>
+  <table>
+    <tr><th>Tình huống</th><th>Giải thích</th></tr>
+    <tr><td>Tôi không thấy kênh TikTok của người khác</td><td>Đúng vậy — mỗi người chỉ thấy kênh của mình. Riêng kho Key YouTube thì chung, ai cũng thấy.</td></tr>
+    <tr><td>Thêm key báo "đã trùng"</td><td>Key đó có người thêm rồi. Vào danh sách tìm là thấy, bấm "Nhận làm" để cùng làm.</td></tr>
+    <tr><td>Vào app bị chậm lần đầu</td><td>Server tiết kiệm điện, "ngủ" khi không ai dùng, tự thức khi có người vào (~5 giây).</td></tr>
+    <tr><td>Quên mật khẩu</td><td>Báo quản lý (admin) cấp lại / đặt mật khẩu mới cho bạn.</td></tr>
+  </table>
+
+  <div class="note">Có gì chưa rõ cứ hỏi quản lý nhé. Chúc bạn làm việc hiệu quả! 🚀</div>
+</body>
+</html>
