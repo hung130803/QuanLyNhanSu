@@ -589,15 +589,16 @@ function drawTiktok() {
   const totalFollow = tiktokCache.reduce((a, b) => a + b.followers, 0);
   const totalLikes = tiktokCache.reduce((a, b) => a + b.likes, 0);
   const personOptions = State.users.map((u) => `<option value="${u.id}" ${String(ttPerson) === String(u.id) ? 'selected' : ''}>${esc(u.name)}</option>`).join('');
+  const countryName = (cc) => { const f = REWARD_COUNTRIES.find(([c]) => c === cc); return f ? f[1] : (cc || 'Chưa đặt nước'); };
 
-  const rows = list.map((t, idx) => {
+  const rowHtml = (t, idx) => {
     const st = TT_STATUS[t.status] || TT_STATUS.active;
     const av = t.avatar ? `<img class="cell-thumb" src="${esc(t.avatar)}" onerror="this.style.visibility='hidden'">` : '<div class="cell-thumb"></div>';
     return `<tr>
       <td class="stt">${idx + 1}</td>
       <td><div class="cell-channel">${av}<div>
         <a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.name)}</a>
-        <div class="cell-sub">${flag(t.country)} ${t.tiktok_id ? '@' + esc(t.tiktok_id) : ''}</div>
+        <div class="cell-sub">${t.tiktok_id ? '@' + esc(t.tiktok_id) : ''}</div>
         <a href="${esc(t.url)}" target="_blank" rel="noopener" class="cell-link">🔗 ${esc((t.url || '').replace(/^https?:\/\//, '').replace(/^www\./, '').slice(0, 38))}</a>
         ${t.note ? `<div class="cell-note">📝 ${esc(t.note)}</div>` : ''}
         ${monetizeChips(t)}
@@ -615,6 +616,29 @@ function drawTiktok() {
         <button class="btn-icon" data-ttdel="${t.id}" title="Xóa">🗑️</button>
       </div></td>
     </tr>`;
+  };
+  const thead = `<thead><tr><th>#</th><th>Kênh TikTok</th><th>Follow</th><th>Tym</th><th>Video</th><th>Trạng thái</th><th>Key nguồn</th><th>Giao cho</th><th></th></tr></thead>`;
+
+  // Gom kênh theo quốc gia
+  const groups = {};
+  list.forEach((t) => { const k = t.country || ''; (groups[k] = groups[k] || []).push(t); });
+  const groupKeys = Object.keys(groups).sort((a, b) => (!a ? 1 : !b ? -1 : groups[b].length - groups[a].length));
+
+  const groupedHtml = groupKeys.map((cc) => {
+    const items = groups[cc];
+    const gf = items.reduce((a, b) => a + b.followers, 0);
+    const gl = items.reduce((a, b) => a + b.likes, 0);
+    return `<div class="country-group">
+      <div class="country-head">
+        <span class="country-flag">${flag(cc)}</span>
+        <span class="country-name">${esc(countryName(cc))}</span>
+        <span class="country-count">${items.length} kênh</span>
+        <span class="spacer"></span>
+        <span class="country-stat">👥 ${fmtCompact(gf)}</span>
+        <span class="country-stat">❤️ ${fmtCompact(gl)}</span>
+      </div>
+      <div class="table-wrap country-table"><table>${thead}<tbody>${items.map((t, i) => rowHtml(t, i)).join('')}</tbody></table></div>
+    </div>`;
   }).join('');
 
   view.innerHTML = `
@@ -631,9 +655,7 @@ function drawTiktok() {
       <div class="kpi" style="padding:8px 16px;margin:0"><div class="kpi-label">Tổng follow</div><div class="kpi-value text-accent" style="font-size:18px">${fmtCompact(totalFollow)}</div></div>
       <div class="kpi" style="padding:8px 16px;margin:0"><div class="kpi-label">Tổng tym</div><div class="kpi-value text-danger" style="font-size:18px">${fmtCompact(totalLikes)}</div></div>
     </div>
-    ${list.length ? `<div class="table-wrap"><table>
-      <thead><tr><th>#</th><th>Kênh TikTok</th><th>Follow</th><th>Tym</th><th>Video</th><th>Trạng thái</th><th>Key nguồn</th><th>Giao cho</th><th></th></tr></thead>
-      <tbody>${rows}</tbody></table></div>`
+    ${list.length ? groupedHtml
       : '<div class="empty"><div class="empty-icon">📱</div>Chưa có kênh TikTok nào. Bấm "Thêm kênh TikTok" để bắt đầu.</div>'}`;
 
   const search = $('#tt-search');
@@ -664,12 +686,7 @@ function tiktokForm(ch = null) {
       ${isEdit ? '' : '<div class="hint">Dán link đầy đủ, hoặc chỉ cần gõ ID kênh (vd: <b>@tenkenh</b>) rồi bấm "Lấy thông tin".</div>'}
       <div id="tt-preview"></div>
     </div>
-    <div class="form-row"><label>Tên kênh</label><input id="tt-name" value="${esc(ch?.name || '')}" placeholder="tự điền khi bấm 'Lấy thông tin', hoặc gõ tay"></div>
-    <div class="form-grid">
-      <div class="form-row"><label>Follower</label><input type="number" id="tt-followers" min="0" value="${ch?.followers ?? ''}"></div>
-      <div class="form-row"><label>Tym (tim)</label><input type="number" id="tt-likes" min="0" value="${ch?.likes ?? ''}"></div>
-    </div>
-    <div class="form-row"><label>Số video</label><input type="number" id="tt-vcount" min="0" value="${ch?.video_count ?? ''}"></div>
+    <div class="form-row"><label>Tên kênh</label><input id="tt-name" value="${esc(ch?.name || '')}" placeholder="tự điền khi bấm 'Lấy thông tin'"></div>
     <div class="form-grid">
       <div class="form-row"><label>Quốc gia (Creator Rewards)</label><select id="tt-country">${countryOpts}</select></div>
       <div class="form-row"><label>Trạng thái</label><select id="tt-status">${statusOptions}</select></div>
@@ -717,9 +734,6 @@ function tiktokForm(ch = null) {
         pdata = info;
         if (info.url) form.querySelector('#tt-url').value = info.url;
         if (info.name) form.querySelector('#tt-name').value = info.name;
-        if (info.followers) form.querySelector('#tt-followers').value = info.followers;
-        if (info.likes) form.querySelector('#tt-likes').value = info.likes;
-        if (info.video_count) form.querySelector('#tt-vcount').value = info.video_count;
         if (info.country) {
           const sel = form.querySelector('#tt-country');
           if (![...sel.options].some((o) => o.value === info.country))
@@ -735,11 +749,11 @@ function tiktokForm(ch = null) {
               <div><div class="pv-name">${esc(info.name || '')} ${flag(info.country)}</div><div class="pv-sub text-accent">✓ Đã lấy được thông tin</div></div>
             </div>
             <div class="ch-meta">👥 ${fmtCompact(info.followers)} follow &nbsp;•&nbsp; ❤️ ${fmtCompact(info.likes)} tym &nbsp;•&nbsp; 🎬 ${fmtNum(info.video_count)} video</div>
-            ${!gotStats ? '<div class="hint text-danger">Lấy được tên nhưng TikTok chặn số liệu. Hãy nhập tay Follower / Tym / Số video bên dưới.</div>' : ''}
+            ${!gotStats ? '<div class="hint text-danger">Lấy được tên nhưng chưa lấy được số (TikTok chặn tạm). Cứ bấm "Thêm kênh", hệ thống sẽ tự lấy lại sau.</div>' : ''}
             ${info.bio ? `<div class="ch-desc">${esc(info.bio)}</div>` : ''}
           </div>`;
         } else {
-          pv.innerHTML = dupWarn + '<div class="dup-warn">⚠️ Không tự lấy được dữ liệu (TikTok chặn truy cập từ server). Bạn cứ <b>nhập tay</b> Tên kênh + Follower + Tym + Số video bên dưới rồi bấm "Thêm kênh" — vẫn lưu bình thường.</div>';
+          pv.innerHTML = dupWarn + '<div class="dup-warn">⚠️ Chưa lấy được dữ liệu (TikTok chặn tạm). Bạn cứ điền Tên + chọn nước rồi bấm "Thêm kênh" — hệ thống sẽ tự lấy số liệu lại sau.</div>';
         }
       } catch (e) { pv.innerHTML = `<div class="hint text-danger">${esc(e.message)}</div>`; }
     };
@@ -762,14 +776,12 @@ function tiktokForm(ch = null) {
       note: form.querySelector('#tt-note').value.trim(),
     };
     if (!body.url) return toast('Thiếu link/ID kênh', 'err');
-    // Số liệu lấy từ ô nhập (tự điền nếu lấy được, hoặc gõ tay)
-    body.followers = form.querySelector('#tt-followers').value;
-    body.likes = form.querySelector('#tt-likes').value;
-    body.video_count = form.querySelector('#tt-vcount').value;
     try {
       if (isEdit) { await api('/tiktok/' + ch.id, { method: 'PUT', body }); toast('Đã cập nhật'); }
       else {
+        // Số liệu lấy tự động từ tikwm (qua preview hoặc server tự lấy khi thêm)
         body.avatar = pdata.avatar; body.bio = pdata.bio; body.tiktok_id = pdata.tiktok_id;
+        body.followers = pdata.followers; body.likes = pdata.likes; body.video_count = pdata.video_count;
         await api('/tiktok', { method: 'POST', body }); toast('Đã thêm kênh TikTok');
       }
       closeModal(); renderTiktok();

@@ -284,6 +284,16 @@ tbody tr:hover { background: var(--card-hover); }
 .mz { font-size: 11px; padding: 2px 8px; border-radius: 6px; font-weight: 600; white-space: nowrap; }
 .mz.on { background: #00d2a822; color: #3ee0bb; }
 .mz.off { background: #6b728022; color: #8a93a3; }
+
+/* Gom kênh TikTok theo quốc gia */
+.country-group { margin-bottom: 20px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.country-head { display: flex; align-items: center; gap: 12px; padding: 13px 18px; background: linear-gradient(90deg, #6c5ce71f, transparent); border-bottom: 1px solid var(--border); }
+.country-flag { font-size: 26px; line-height: 1; }
+.country-name { font-size: 16px; font-weight: 800; }
+.country-count { font-size: 12px; font-weight: 700; background: var(--primary); color: #fff; padding: 2px 10px; border-radius: 20px; }
+.country-stat { font-size: 13px; font-weight: 700; color: var(--text-dim); white-space: nowrap; }
+.country-table { border: none; border-radius: 0; }
+.country-table table { border-collapse: collapse; }
 .uc-meta { font-size: 12px; color: var(--text-dim); }
 .uc-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; cursor: pointer; transition: background .15s; }
 .uc-item:hover { background: var(--card-hover); }
