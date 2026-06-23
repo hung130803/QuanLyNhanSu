@@ -442,3 +442,78 @@ input:focus, select:focus, textarea:focus { background: var(--bg); }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #2a3243; border-radius: 10px; border: 2px solid var(--bg); }
 ::-webkit-scrollbar-thumb:hover { background: #3a455c; }
+
+/* Huy hiệu loại thao tác (Lịch sử) */
+.act-badge { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 8px; white-space: nowrap; }
+.act-badge.k-add { background: #19d3a226; color: #5fe6c4; }
+.act-badge.k-edit { background: #46a6ff26; color: #8cc6ff; }
+.act-badge.k-del { background: #ff5d7a26; color: #ff96aa; }
+.act-badge.k-claim { background: #7c6cf030; color: #b3a7ff; }
+.act-badge.k-other { background: #8a93a322; color: #aeb6c4; }
+
+/* ============================================================
+   CHẾ ĐỘ SÁNG
+   ============================================================ */
+body.light {
+  --bg: #eef1f7;
+  --bg-soft: #ffffff;
+  --card: #ffffff;
+  --card-hover: #eef2f9;
+  --border: #dce2ed;
+  --border-soft: #e7ebf3;
+  --text: #18202e;
+  --text-dim: #5d6878;
+  --primary: #6a59e8;
+  --primary-soft: #5848d6;
+  --shadow: 0 12px 34px rgba(60,70,120,.14);
+  --shadow-sm: 0 2px 10px rgba(60,70,120,.08);
+  background:
+    radial-gradient(900px 500px at 100% -5%, #7c6cf014 0%, transparent 55%),
+    radial-gradient(800px 500px at -10% 110%, #19d3a216 0%, transparent 50%),
+    var(--bg);
+}
+body.light .sidebar { background: linear-gradient(180deg, #ffffff, #f2f5fb); }
+body.light .topbar { background: rgba(255,255,255,.82); }
+body.light .kpi, body.light .panel { background: #ffffff; }
+body.light .kpi-value { background: linear-gradient(180deg, #1a2230, #46557a); -webkit-background-clip: text; background-clip: text; color: transparent; }
+body.light .kpi.accent .kpi-value, body.light .kpi.warn .kpi-value, body.light .kpi.info .kpi-value, body.light .kpi.danger .kpi-value, body.light .kpi.primary .kpi-value { -webkit-text-fill-color: currentColor; }
+body.light th { background: #eef2fa; color: #4b3fd1; }
+body.light tbody tr:hover { background: #f4f7fc; }
+body.light input, body.light select, body.light textarea { background: #f5f8fc; color: var(--text); }
+body.light input:focus, body.light select:focus, body.light textarea:focus { background: #fff; }
+body.light .country-head { background: linear-gradient(90deg, #7c6cf016, transparent 70%); }
+body.light .modal { box-shadow: 0 24px 70px rgba(60,70,120,.28); }
+body.light .login-screen { background: radial-gradient(1200px 600px at 30% -10%, #e7e3ff 0%, transparent 60%), radial-gradient(900px 500px at 90% 110%, #d9f5ee 0%, transparent 55%), var(--bg); }
+body.light .login-card { background: #fff; }
+body.light .badge.todo { background: #e6e9f0; color: #5d6878; }
+body.light .menu-toggle { color: var(--text); }
+body.light ::-webkit-scrollbar-thumb { background: #ccd4e2; border-color: var(--bg); }
+body.light .cell-link { color: #2f6fd0 !important; }
+
+/* ============================================================
+   TỐI ƯU ĐIỆN THOẠI
+   ============================================================ */
+@media (max-width: 640px) {
+  .view { padding: 14px 12px; }
+  .topbar { padding: 12px 14px; }
+  .topbar h2 { font-size: 17px; }
+  .topbar-right { gap: 6px; }
+  .topbar-right .btn { padding: 8px 11px; font-size: 13px; }
+  .kpi-grid { gap: 11px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+  .kpi { padding: 14px; border-radius: 14px; }
+  .kpi-value { font-size: 23px; }
+  .panel { padding: 15px; border-radius: 14px; }
+  .toolbar { gap: 8px; }
+  .toolbar .search { min-width: 100%; max-width: 100%; }
+  .toolbar select, .toolbar input[type="date"] { flex: 1; min-width: 120px; }
+  .filter-tabs { gap: 6px; }
+  .filter-tab { padding: 7px 12px; font-size: 13px; }
+  th, td { padding: 9px 10px; }
+  .modal { max-width: 100%; border-radius: 16px; }
+  .modal-body { padding: 16px; }
+  .form-grid { grid-template-columns: 1fr; }
+  .sidebar { width: 84vw; max-width: 300px; }
+  .country-head { flex-wrap: wrap; gap: 8px; padding: 11px 13px; }
+  .cat-tag, .country-tag, .quality-tag, .ch-sub-tag { font-size: 10.5px; }
+  .cell-thumb { width: 32px; height: 32px; }
+}

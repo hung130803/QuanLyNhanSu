@@ -50,6 +50,14 @@ function token() {
   return crypto.randomBytes(24).toString('hex');
 }
 
+// Ghi lịch sử thao tác (ai làm gì, lúc nào)
+function logActivity(req, kind, message) {
+  try {
+    db.prepare('INSERT INTO activity_log (user_id, user_name, kind, message) VALUES (?, ?, ?, ?)')
+      .run(req && req.user ? req.user.id : null, req && req.user ? req.user.name : 'Hệ thống', kind, message);
+  } catch (_) {}
+}
+
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
 
@@ -325,6 +333,7 @@ app.post('/api/users', auth, adminOnly, (req, res) => {
       'INSERT INTO users (username, password_hash, name, role) VALUES (?, ?, ?, ?)'
     )
     .run(username, bcrypt.hashSync(password, 10), name, role === 'admin' ? 'admin' : 'staff');
+  logActivity(req, 'add', `Thêm nhân sự "${name}" (@${username})`);
   res.json(publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid)));
 });
 
@@ -343,13 +352,16 @@ app.put('/api/users/:id', auth, adminOnly, (req, res) => {
       bcrypt.hashSync(password, 10),
       u.id
     );
+  logActivity(req, 'edit', `Sửa nhân sự "${u.name}"${password ? ' (đổi mật khẩu)' : ''}`);
   res.json(publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(u.id)));
 });
 
 app.delete('/api/users/:id', auth, adminOnly, (req, res) => {
   if (Number(req.params.id) === req.user.id)
     return res.status(400).json({ error: 'Không thể xóa chính mình' });
+  const u = db.prepare('SELECT name FROM users WHERE id = ?').get(req.params.id);
   db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+  logActivity(req, 'delete', `Xóa nhân sự "${u ? u.name : req.params.id}"`);
   res.json({ ok: true });
 });
 
@@ -429,6 +441,7 @@ app.post('/api/keys', auth, async (req, res) => {
       req.user.id,
       note || null
     );
+  logActivity(req, 'add', `Thêm key YouTube "${channel_name}"`);
   res.json(db.prepare(keyWithNames + ' WHERE k.id = ?').get(info.lastInsertRowid));
 });
 
@@ -450,11 +463,14 @@ app.put('/api/keys/:id', auth, (req, res) => {
     note !== undefined ? note : k.note,
     k.id
   );
+  logActivity(req, 'edit', `Sửa key YouTube "${k.channel_name}"`);
   res.json(db.prepare(keyWithNames + ' WHERE k.id = ?').get(k.id));
 });
 
 app.delete('/api/keys/:id', auth, (req, res) => {
+  const k = db.prepare('SELECT channel_name FROM keys WHERE id = ?').get(req.params.id);
   db.prepare('DELETE FROM keys WHERE id = ?').run(req.params.id);
+  logActivity(req, 'delete', `Xóa key YouTube "${k ? k.channel_name : req.params.id}"`);
   res.json({ ok: true });
 });
 
@@ -472,6 +488,7 @@ app.post('/api/keys/:id/claim', auth, (req, res) => {
     db.prepare('INSERT OR IGNORE INTO key_workers (key_id, user_id) VALUES (?, ?)').run(k.id, req.user.id);
     if (k.status === 'todo') db.prepare("UPDATE keys SET status='doing', updated_at=datetime('now') WHERE id=?").run(k.id);
   }
+  logActivity(req, 'claim', `${release ? 'Bỏ' : 'Nhận'} làm key "${k.channel_name}"`);
   res.json(db.prepare(keyWithNames + ' WHERE k.id = ?').get(k.id));
 });
 
@@ -553,6 +570,7 @@ app.post('/api/tiktok', auth, async (req, res) => {
     source_key_id || null, owner, req.user.id, note || null
   );
   saveSnapshot(out.lastInsertRowid, Number(followers) || 0, Number(likes) || 0, Number(video_count) || 0);
+  logActivity(req, 'add', `Thêm kênh TikTok "${name}"`);
   res.json(db.prepare(tiktokWithNames + ' WHERE t.id = ?').get(out.lastInsertRowid));
 });
 
@@ -578,6 +596,7 @@ app.put('/api/tiktok/:id', auth, (req, res) => {
     video_count !== undefined && video_count !== '' ? Number(video_count) : t.video_count,
     t.id
   );
+  logActivity(req, 'edit', `Sửa kênh TikTok "${t.name}"`);
   res.json(db.prepare(tiktokWithNames + ' WHERE t.id = ?').get(t.id));
 });
 
@@ -599,7 +618,9 @@ app.post('/api/tiktok/:id/sync', auth, async (req, res) => {
 });
 
 app.delete('/api/tiktok/:id', auth, (req, res) => {
+  const t = db.prepare('SELECT name FROM tiktok_channels WHERE id = ?').get(req.params.id);
   db.prepare('DELETE FROM tiktok_channels WHERE id = ?').run(req.params.id);
+  logActivity(req, 'delete', `Xóa kênh TikTok "${t ? t.name : req.params.id}"`);
   res.json({ ok: true });
 });
 
@@ -746,11 +767,22 @@ app.post('/api/finance', auth, adminOnly, (req, res) => {
   const info = db
     .prepare('INSERT INTO finance (key_id, type, amount, note, log_date) VALUES (?, ?, ?, ?, ?)')
     .run(key_id || null, type, Number(amount) || 0, note || null, log_date);
+  logActivity(req, 'add', `Ghi ${type === 'revenue' ? 'doanh thu' : 'chi phí'} $${Number(amount) || 0}`);
   res.json(db.prepare('SELECT * FROM finance WHERE id = ?').get(info.lastInsertRowid));
 });
 
 app.delete('/api/finance/:id', auth, adminOnly, (req, res) => {
   db.prepare('DELETE FROM finance WHERE id = ?').run(req.params.id);
+  logActivity(req, 'delete', 'Xóa một khoản thu/chi');
+  res.json({ ok: true });
+});
+
+// ============ LỊCH SỬ THAO TÁC (admin) ============
+app.get('/api/activity', auth, adminOnly, (req, res) => {
+  res.json(db.prepare('SELECT * FROM activity_log ORDER BY id DESC LIMIT 500').all());
+});
+app.delete('/api/activity', auth, adminOnly, (req, res) => {
+  db.prepare('DELETE FROM activity_log').run();
   res.json({ ok: true });
 });
 

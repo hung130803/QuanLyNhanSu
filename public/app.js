@@ -184,6 +184,7 @@ function buildNav() {
   if (isAdmin) {
     items.push({ id: 'staff', icon: '👥', label: 'Nhân sự' });
     items.push({ id: 'finance', icon: '💰', label: 'Lợi nhuận' });
+    items.push({ id: 'activity', icon: '📜', label: 'Lịch sử' });
   }
   items.push({ id: 'settings', icon: '⚙️', label: 'Cài đặt' });
 
@@ -196,7 +197,7 @@ function buildNav() {
   });
 }
 
-const PAGE_TITLES = { dashboard: 'Tổng quan', keys: 'Key YouTube', tiktok: 'Kênh TikTok', videos: 'Nhật ký video', staff: 'Nhân sự', finance: 'Lợi nhuận', settings: 'Cài đặt' };
+const PAGE_TITLES = { dashboard: 'Tổng quan', keys: 'Key YouTube', tiktok: 'Kênh TikTok', videos: 'Nhật ký video', staff: 'Nhân sự', finance: 'Lợi nhuận', activity: 'Lịch sử thao tác', settings: 'Cài đặt' };
 
 // Điều hướng có lưu lịch sử (để nút "quay lại" của chuột/trình duyệt hoạt động)
 function navigate(page) {
@@ -211,7 +212,7 @@ function renderPage(page) {
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.page === page));
   $('#topbar-right').innerHTML = '';
   closeMenu();
-  const renderers = { dashboard: renderDashboard, keys: renderKeys, tiktok: renderTiktok, videos: renderVideos, staff: renderStaff, finance: renderFinance, settings: renderSettings };
+  const renderers = { dashboard: renderDashboard, keys: renderKeys, tiktok: renderTiktok, videos: renderVideos, staff: renderStaff, finance: renderFinance, activity: renderActivity, settings: renderSettings };
   (renderers[page] || renderDashboard)();
 }
 
@@ -587,6 +588,7 @@ let tiktokCache = [];
 let ttSearch = '';
 let ttSort = 'recent';
 let ttPerson = '';
+let ttCountry = 'all';
 
 // Huy hiệu tình trạng kiếm tiền
 function monetizeChips(t) {
@@ -634,12 +636,17 @@ function drawTiktok() {
     list = list.filter((t) => (t.name || '').toLowerCase().includes(q) || (t.tiktok_id || '').toLowerCase().includes(q) || (t.url || '').toLowerCase().includes(q));
   }
   if (ttPerson) list = list.filter((t) => String(t.assigned_to) === String(ttPerson));
+  if (ttCountry !== 'all') list = list.filter((t) => (t.country || '') === (ttCountry === '__none' ? '' : ttCountry));
   if (ttSort === 'follow') list.sort((a, b) => b.followers - a.followers);
   else if (ttSort === 'likes') list.sort((a, b) => b.likes - a.likes);
   else if (ttSort === 'video') list.sort((a, b) => b.video_count - a.video_count);
 
   const personOptions = State.users.map((u) => `<option value="${u.id}" ${String(ttPerson) === String(u.id) ? 'selected' : ''}>${esc(u.name)}</option>`).join('');
-  const countryName = (cc) => { const f = REWARD_COUNTRIES.find(([c]) => c === cc); return f ? f[1] : (cc || 'Chưa đặt nước'); };
+  const ttCountryName = (cc) => { const f = REWARD_COUNTRIES.find(([c]) => c === cc); return f ? f[1] : (cc || 'Chưa đặt nước'); };
+  const usedTtCountries = [...new Set(tiktokCache.map((t) => t.country).filter(Boolean))];
+  const ttCountryOpts = [...new Set([...REWARD_COUNTRIES.map(([c]) => c), ...usedTtCountries])]
+    .map((c) => `<option value="${c}" ${ttCountry === c ? 'selected' : ''}>${flag(c)} ${esc(ttCountryName(c))}</option>`).join('');
+  const countryName = ttCountryName;
 
   const rowHtml = (t, idx) => {
     const st = TT_STATUS[t.status] || TT_STATUS.active;
@@ -659,6 +666,7 @@ function drawTiktok() {
       <td><span class="badge ${st.cls}">${st.label}</span></td>
       <td class="nowrap cell-sub">${t.source_key_name ? esc(t.source_key_name) : '<span class="muted">—</span>'}</td>
       <td class="nowrap">${t.assigned_name ? esc(t.assigned_name) : '<span class="muted">—</span>'}</td>
+      <td class="nowrap cell-sub">${fmtDateTime(t.created_at)}</td>
       <td><div class="row-actions">
         <button class="btn-icon" data-ttsync="${t.id}" title="Cập nhật số liệu">🔄</button>
         <button class="btn-icon" data-ttinfo="${t.id}" title="Chi tiết">👁️</button>
@@ -667,7 +675,7 @@ function drawTiktok() {
       </div></td>
     </tr>`;
   };
-  const thead = `<thead><tr><th>#</th><th>Kênh TikTok</th><th>Follow</th><th>Tym</th><th>Video</th><th>Trạng thái</th><th>Key nguồn</th><th>Giao cho</th><th></th></tr></thead>`;
+  const thead = `<thead><tr><th>#</th><th>Kênh TikTok</th><th>Follow</th><th>Tym</th><th>Video</th><th>Trạng thái</th><th>Key nguồn</th><th>Giao cho</th><th>Ngày thêm</th><th></th></tr></thead>`;
 
   // Gom kênh theo quốc gia
   const groups = {};
@@ -694,6 +702,11 @@ function drawTiktok() {
   view.innerHTML = `
     <div class="toolbar">
       <input class="search" id="tt-search" placeholder="🔍 Tìm kênh TikTok…" value="${esc(ttSearch)}">
+      <select id="tt-country">
+        <option value="all" ${ttCountry === 'all' ? 'selected' : ''}>🌍 Tất cả nước</option>
+        ${ttCountryOpts}
+        <option value="__none" ${ttCountry === '__none' ? 'selected' : ''}>❓ Chưa đặt nước</option>
+      </select>
       <select id="tt-sort">
         <option value="recent" ${ttSort === 'recent' ? 'selected' : ''}>↕ Mới thêm</option>
         <option value="follow" ${ttSort === 'follow' ? 'selected' : ''}>👥 Follow cao nhất</option>
@@ -708,6 +721,7 @@ function drawTiktok() {
   const search = $('#tt-search');
   search.oninput = () => { ttSearch = search.value; const p = search.selectionStart; drawTiktok(); const ns = $('#tt-search'); ns.focus(); ns.setSelectionRange(p, p); };
   $('#tt-sort').onchange = (e) => { ttSort = e.target.value; drawTiktok(); };
+  $('#tt-country').onchange = (e) => { ttCountry = e.target.value; drawTiktok(); };
   if ($('#tt-person')) $('#tt-person').onchange = (e) => { ttPerson = e.target.value; drawTiktok(); };
   view.querySelectorAll('[data-ttsync]').forEach((b) => b.onclick = () => syncTiktok(b.dataset.ttsync));
   view.querySelectorAll('[data-ttinfo]').forEach((b) => b.onclick = () => { const t = tiktokCache.find((x) => x.id == b.dataset.ttinfo); tiktokDetail(t); });
@@ -865,6 +879,7 @@ function tiktokDetail(t) {
     <div class="ch-note">
       ${t.source_key_name ? `<div>🔑 Key nguồn: <b>${esc(t.source_key_name)}</b></div>` : ''}
       ${t.assigned_name ? `<div>👤 Giao cho: <b>${esc(t.assigned_name)}</b></div>` : ''}
+      <div class="cell-sub">🕒 Thêm lúc: ${fmtDateTime(t.created_at)}</div>
       ${t.last_synced ? `<div class="cell-sub">Cập nhật số liệu lần cuối: ${fmtDate(t.last_synced)}</div>` : ''}
     </div>
     ${t.note ? `<div class="ch-note">📝 ${esc(t.note)}</div>` : ''}
@@ -1182,6 +1197,40 @@ function financeForm() {
   openModal('Ghi khoản thu / chi', form);
 }
 
+// ============ ACTIVITY LOG (admin) ============
+async function renderActivity() {
+  $('#topbar-right').innerHTML = '';
+  const clrBtn = el('<button class="btn btn-ghost">🗑️ Xóa lịch sử</button>');
+  clrBtn.onclick = async () => {
+    if (!confirm('Xóa toàn bộ lịch sử thao tác? Không thể hoàn tác.')) return;
+    try { await api('/activity', { method: 'DELETE' }); toast('Đã xóa lịch sử'); renderActivity(); } catch (e) { toast(e.message, 'err'); }
+  };
+  $('#topbar-right').appendChild(clrBtn);
+
+  const view = $('#view');
+  view.innerHTML = '<div class="loading">Đang tải lịch sử…</div>';
+  let rows;
+  try { rows = await api('/activity'); } catch (e) { view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+
+  const KIND = { add: ['➕ Thêm', 'k-add'], edit: ['✏️ Sửa', 'k-edit'], delete: ['🗑️ Xóa', 'k-del'], claim: ['✋ Nhận/Bỏ', 'k-claim'], other: ['• Khác', 'k-other'] };
+  const trs = rows.map((r) => {
+    const k = KIND[r.kind] || KIND.other;
+    return `<tr>
+      <td class="nowrap cell-sub">${fmtDateTime(r.created_at)}</td>
+      <td><b>${esc(r.user_name || '—')}</b></td>
+      <td><span class="act-badge ${k[1]}">${k[0]}</span></td>
+      <td>${esc(r.message)}</td>
+    </tr>`;
+  }).join('');
+
+  view.innerHTML = rows.length
+    ? `<div class="panel-title" style="margin-bottom:12px">📜 ${rows.length} thao tác gần nhất</div>
+       <div class="table-wrap"><table>
+         <thead><tr><th>Thời gian</th><th>Người làm</th><th>Loại</th><th>Nội dung</th></tr></thead>
+         <tbody>${trs}</tbody></table></div>`
+    : '<div class="empty"><div class="empty-icon">📜</div>Chưa có thao tác nào được ghi.</div>';
+}
+
 // ============ SETTINGS ============
 function renderSettings() {
   const view = $('#view');
@@ -1213,9 +1262,23 @@ function renderSettings() {
 function closeMenu() { $('#sidebar').classList.remove('open'); $('#app').classList.remove('menu-open'); }
 function toggleMenu() { $('#sidebar').classList.toggle('open'); $('#app').classList.toggle('menu-open'); }
 
+// ============ CHẾ ĐỘ SÁNG / TỐI ============
+function applyTheme() {
+  const light = localStorage.getItem('rm_theme') === 'light';
+  document.body.classList.toggle('light', light);
+  const b = $('#theme-btn');
+  if (b) b.textContent = light ? '🌙 Chuyển nền tối' : '☀️ Chuyển nền sáng';
+}
+function toggleTheme() {
+  localStorage.setItem('rm_theme', localStorage.getItem('rm_theme') === 'light' ? 'dark' : 'light');
+  applyTheme();
+}
+
 // ============ INIT ============
 $('#login-form').onsubmit = doLogin;
 $('#logout-btn').onclick = logout;
+$('#theme-btn').onclick = toggleTheme;
+applyTheme();
 $('#modal-close').onclick = closeModal;
 $('#modal-overlay').onclick = (e) => { if (e.target.id === 'modal-overlay') closeModal(); };
 $('#menu-toggle').onclick = toggleMenu;

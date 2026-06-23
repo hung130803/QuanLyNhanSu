@@ -128,6 +128,16 @@ CREATE TABLE IF NOT EXISTS tiktok_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_snap_channel ON tiktok_snapshots(channel_id, snap_date);
 
+CREATE TABLE IF NOT EXISTS activity_log (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER,
+  user_name  TEXT,
+  kind       TEXT,                              -- add | edit | delete | claim | other
+  message    TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_activity_date ON activity_log(created_at);
+
 CREATE INDEX IF NOT EXISTS idx_videologs_date ON video_logs(log_date);
 CREATE INDEX IF NOT EXISTS idx_videologs_user ON video_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_keys_status ON keys(status);
