@@ -316,6 +316,27 @@ async function claimKey(id) {
   catch (e) { toast(e.message, 'err'); }
 }
 
+// Nhận / bỏ làm key TỨC THÌ: cập nhật giao diện ngay, gửi server ở nền (không phải chờ)
+function optimisticClaim(id, release) {
+  const k = keysCache.find((x) => x.id == id); if (!k) return;
+  const meId = String(State.user.id), meName = State.user.name;
+  let ids = k.worker_ids ? String(k.worker_ids).split(',').filter(Boolean) : [];
+  let names = k.worker_names ? k.worker_names.split(', ').filter(Boolean) : [];
+  if (release) {
+    const i = ids.indexOf(meId);
+    if (i >= 0) { ids.splice(i, 1); const j = names.indexOf(meName); if (j >= 0) names.splice(j, 1); }
+    if (ids.length === 0 && k.status === 'doing') k.status = 'todo';
+  } else {
+    if (!ids.includes(meId)) { ids.push(meId); names.push(meName); }
+    if (k.status === 'todo') k.status = 'doing';
+  }
+  k.worker_ids = ids.join(','); k.worker_names = names.join(', '); k.worker_count = ids.length;
+  drawKeys(); // hiện ngay
+  api('/keys/' + id + '/claim', { method: 'POST', body: release ? { release: true } : {} })
+    .then((updated) => { const idx = keysCache.findIndex((x) => x.id == id); if (idx >= 0 && updated && updated.id) keysCache[idx] = updated; })
+    .catch((e) => { toast(e.message, 'err'); renderKeys(); });
+}
+
 // ============ KEYS ============
 let keysCache = [];
 let keysFilter = 'all';
@@ -329,8 +350,11 @@ async function renderKeys() {
   expBtn.onclick = () => exportCsv('key-youtube.csv',
     ['Chủ đề', 'Nước', 'Tên kênh', 'Link', 'Trạng thái', 'Chất lượng', 'Sub', 'Số video', 'Người làm', 'Người thêm', 'Ngày thêm'],
     keysCache.map((k) => [k.category || '', k.country || '', k.channel_name, k.url, (STATUS[k.status] || {}).label || k.status, QUALITY[k.quality] || k.quality || '', k.subscribers || '', k.video_count || '', k.worker_names || '', k.added_name || '', fmtDate(k.created_at)]));
+  const bulkBtn = el('<button class="btn btn-ghost">📥 Thêm hàng loạt</button>');
+  bulkBtn.onclick = () => bulkKeyForm();
   const addBtn = el('<button class="btn btn-primary">➕ Thêm Key</button>');
   addBtn.onclick = () => keyForm();
+  $('#topbar-right').appendChild(bulkBtn);
   $('#topbar-right').appendChild(expBtn);
   $('#topbar-right').appendChild(addBtn);
 
@@ -421,12 +445,8 @@ function drawKeys() {
   view.querySelectorAll('[data-info]').forEach((b) => b.onclick = () => { const k = keysCache.find((x) => x.id == b.dataset.info); keyDetail(k); });
   view.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => { const k = keysCache.find((x) => x.id == b.dataset.edit); keyForm(k); });
   view.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => delKey(b.dataset.del));
-  view.querySelectorAll('[data-claim]').forEach((b) => b.onclick = async () => {
-    try { await api('/keys/' + b.dataset.claim + '/claim', { method: 'POST', body: {} }); toast('✋ Đã nhận key — đánh dấu bạn đang làm'); renderKeys(); } catch (e) { toast(e.message, 'err'); }
-  });
-  view.querySelectorAll('[data-release]').forEach((b) => b.onclick = async () => {
-    try { await api('/keys/' + b.dataset.release + '/claim', { method: 'POST', body: { release: true } }); toast('Đã bỏ nhận key'); renderKeys(); } catch (e) { toast(e.message, 'err'); }
-  });
+  view.querySelectorAll('[data-claim]').forEach((b) => b.onclick = () => optimisticClaim(b.dataset.claim, false));
+  view.querySelectorAll('[data-release]').forEach((b) => b.onclick = () => optimisticClaim(b.dataset.release, true));
 }
 
 // HTML tóm tắt nội dung kênh (mô tả + sub + video gần đây)
@@ -566,6 +586,7 @@ function keyForm(key = null) {
       }
       closeModal();
       renderKeys();
+      if (!isEdit) setTimeout(() => { if (State.page === 'keys') renderKeys(); }, 3000);
     } catch (err) {
       if (err.status === 409 && err.data && err.data.key) {
         const k = err.data.key;
@@ -581,6 +602,40 @@ async function delKey(id) {
   if (!confirm('Xóa key này? Hành động không thể hoàn tác.')) return;
   try { await api('/keys/' + id, { method: 'DELETE' }); toast('Đã xóa key'); renderKeys(); }
   catch (e) { toast(e.message, 'err'); }
+}
+
+// Thêm HÀNG LOẠT key YouTube
+function bulkKeyForm() {
+  const form = el(`<form>
+    <div class="form-row">
+      <label>Chủ đề / Thể loại chung <span class="req">* bắt buộc</span></label>
+      <input id="bk-category" placeholder="vd: nhạc, gym… (áp cho tất cả link)" required>
+    </div>
+    <div class="form-row">
+      <label>Quốc gia chung (tùy chọn)</label>
+      <select id="bk-country"><option value="">— không đặt —</option>${REWARD_COUNTRIES.map(([c, n]) => `<option value="${c}">${flag(c)} ${n} (${c})</option>`).join('')}</select>
+    </div>
+    <div class="form-row">
+      <label>Dán link kênh YouTube — mỗi dòng 1 link</label>
+      <textarea id="bk-urls" rows="8" placeholder="https://youtube.com/@kenh1&#10;https://youtube.com/@kenh2&#10;https://youtube.com/@kenh3"></textarea>
+      <div class="hint">Tự bỏ qua link trùng. Tên + thông tin kênh sẽ tự lấy ở nền sau khi thêm.</div>
+    </div>
+    <div class="form-actions"><button type="submit" class="btn btn-primary">Thêm tất cả</button></div>
+  </form>`);
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const body = { category: form.querySelector('#bk-category').value.trim(), country: form.querySelector('#bk-country').value, urls: form.querySelector('#bk-urls').value };
+    if (!body.category) return toast('Nhập chủ đề chung', 'err');
+    if (!body.urls.trim()) return toast('Dán ít nhất 1 link', 'err');
+    const unlock = lockBtn(form);
+    try {
+      const r = await api('/keys/bulk', { method: 'POST', body });
+      toast(`✓ Đã thêm ${r.added} key${r.skipped ? ', bỏ qua ' + r.skipped + ' trùng' : ''}`);
+      closeModal(); renderKeys();
+      setTimeout(() => { if (State.page === 'keys') renderKeys(); }, 3500);
+    } catch (err) { toast(err.message, 'err'); } finally { unlock(); }
+  };
+  openModal('📥 Thêm hàng loạt Key YouTube', form);
 }
 
 // ============ TIKTOK ============
@@ -603,18 +658,19 @@ async function renderTiktok() {
   expBtn.onclick = () => exportCsv('kenh-tiktok.csv',
     ['Tên', 'TikTok ID', 'Link', 'Quốc gia', 'Follow', 'Tym', 'Video', 'Kiếm tiền', 'Paypal', 'XMDT', 'Trạng thái', 'Key nguồn', 'Giao cho'],
     tiktokCache.map((t) => [t.name, t.tiktok_id || '', t.url, t.country || '', t.followers, t.likes, t.video_count, t.monetized ? 'Có' : 'Chưa', t.paypal_added ? 'Có' : 'Chưa', t.verified ? 'Có' : 'Chưa', (TT_STATUS[t.status] || {}).label || t.status, t.source_key_name || '', t.assigned_name || '']));
-  const addBtn = el('<button class="btn btn-primary">➕ Thêm kênh TikTok</button>');
+  const addBtn = el('<button class="btn btn-primary">➕ Thêm kênh</button>');
   addBtn.onclick = () => tiktokForm();
-  if (State.user.role === 'admin') {
-    const syncBtn = el('<button class="btn btn-ghost">🔄 Cập nhật tất cả</button>');
-    syncBtn.onclick = async () => {
-      try {
-        await api('/tiktok/sync-all', { method: 'POST', body: {} });
-        toast('Đang cập nhật số liệu tất cả kênh ở hậu trường… vài phút nữa làm mới trang để xem');
-      } catch (e) { toast(e.message, 'err'); }
-    };
-    $('#topbar-right').appendChild(syncBtn);
-  }
+  const bulkBtn = el('<button class="btn btn-ghost">📥 Thêm hàng loạt</button>');
+  bulkBtn.onclick = () => bulkTiktokForm();
+  const syncBtn = el(`<button class="btn btn-ghost">🔄 ${State.user.role === 'admin' ? 'Cập nhật tất cả' : 'Cập nhật kênh của tôi'}</button>`);
+  syncBtn.onclick = async () => {
+    try {
+      await api('/tiktok/sync-all', { method: 'POST', body: {} });
+      toast('Đang cập nhật số liệu ở hậu trường… vài phút nữa làm mới trang để xem');
+    } catch (e) { toast(e.message, 'err'); }
+  };
+  $('#topbar-right').appendChild(syncBtn);
+  $('#topbar-right').appendChild(bulkBtn);
   $('#topbar-right').appendChild(expBtn);
   $('#topbar-right').appendChild(addBtn);
 
@@ -849,6 +905,7 @@ function tiktokForm(ch = null) {
         await api('/tiktok', { method: 'POST', body }); toast('Đã thêm kênh TikTok');
       }
       closeModal(); renderTiktok();
+      if (!isEdit) setTimeout(() => { if (State.page === 'tiktok') renderTiktok(); }, 3500);
     } catch (err) {
       if (err.status === 409 && err.data && err.data.channel) {
         const c = err.data.channel;
@@ -920,6 +977,36 @@ async function delTiktok(id) {
   if (!confirm('Xóa kênh TikTok này khỏi hệ thống?')) return;
   try { await api('/tiktok/' + id, { method: 'DELETE' }); toast('Đã xóa'); renderTiktok(); }
   catch (e) { toast(e.message, 'err'); }
+}
+
+// Thêm HÀNG LOẠT kênh TikTok
+function bulkTiktokForm() {
+  const statusOptions = Object.entries(TT_STATUS).map(([v, o]) => `<option value="${v}">${o.label}</option>`).join('');
+  const form = el(`<form>
+    <div class="form-grid">
+      <div class="form-row"><label>Quốc gia chung (tùy chọn)</label><select id="btt-country"><option value="">— không đặt —</option>${REWARD_COUNTRIES.map(([c, n]) => `<option value="${c}">${flag(c)} ${n}</option>`).join('')}</select></div>
+      <div class="form-row"><label>Trạng thái chung</label><select id="btt-status">${statusOptions}</select></div>
+    </div>
+    <div class="form-row">
+      <label>Dán link/ID kênh TikTok — mỗi dòng 1 cái</label>
+      <textarea id="btt-urls" rows="8" placeholder="@kenh1&#10;https://www.tiktok.com/@kenh2&#10;@kenh3"></textarea>
+      <div class="hint">Tự bỏ qua trùng. Số follow/tym sẽ tự lấy ở nền sau khi thêm (kênh hiện ngay).</div>
+    </div>
+    <div class="form-actions"><button type="submit" class="btn btn-primary">Thêm tất cả</button></div>
+  </form>`);
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const body = { country: form.querySelector('#btt-country').value, status: form.querySelector('#btt-status').value, urls: form.querySelector('#btt-urls').value };
+    if (!body.urls.trim()) return toast('Dán ít nhất 1 link', 'err');
+    const unlock = lockBtn(form);
+    try {
+      const r = await api('/tiktok/bulk', { method: 'POST', body });
+      toast(`✓ Đã thêm ${r.added} kênh${r.skipped ? ', bỏ qua ' + r.skipped + ' trùng' : ''}`);
+      closeModal(); renderTiktok();
+      setTimeout(() => { if (State.page === 'tiktok') renderTiktok(); }, 4500);
+    } catch (err) { toast(err.message, 'err'); } finally { unlock(); }
+  };
+  openModal('📥 Thêm hàng loạt kênh TikTok', form);
 }
 
 // ============ VIDEO LOGS ============

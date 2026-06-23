@@ -11,9 +11,9 @@ primary_region = "sin"   # Singapore — gần Việt Nam nhất
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = "stop"
+  auto_stop_machines = "suspend"
   auto_start_machines = true
-  min_machines_running = 0   # ngủ khi không có ai dùng -> tiết kiệm (tự bật lại khi có người vào)
+  min_machines_running = 1   # luôn thức -> không bị chậm lần đầu (cold start)
 
 # Ổ đĩa bền: dữ liệu (file reup.db) nằm ở đây, KHÔNG mất khi cập nhật
 [mounts]

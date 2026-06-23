@@ -402,22 +402,9 @@ app.post('/api/keys', auth, async (req, res) => {
   let dup = allKeys.find((k) => normalizeUrl(k.url) === norm);
   if (!dup && channel_id) dup = allKeys.find((k) => k.channel_id && k.channel_id === channel_id);
   if (dup) return res.status(409).json({ error: 'duplicate', key: dup });
-  // Nếu thiếu thông tin (chưa bấm "Lấy thông tin") thì tự lấy từ link
-  if (!channel_name || description == null) {
-    const info = await fetchChannelInfo(url);
-    channel_name = channel_name || info.channel_name || url;
-    thumbnail = thumbnail || info.thumbnail;
-    channel_id = channel_id || info.channel_id;
-    description = description || info.description;
-    subscribers = subscribers || info.subscribers;
-    video_count = video_count || info.video_count;
-    recent_videos = recent_videos || info.recent_videos;
-  }
-  // Kiểm tra lại theo channel_id sau khi đã lấy thông tin
-  if (channel_id) {
-    const dup2 = allKeys.find((k) => k.channel_id && k.channel_id === channel_id);
-    if (dup2) return res.status(409).json({ error: 'duplicate', key: dup2 });
-  }
+  // Tên nhanh từ handle để hiện ngay; thông tin đầy đủ lấy ở nền (không bắt người dùng chờ)
+  const needEnrich = (description == null);
+  if (!channel_name) { const m = url.match(/@([^/?#]+)/); channel_name = (m ? m[1] : url); }
   const rv = Array.isArray(recent_videos) ? JSON.stringify(recent_videos) : (recent_videos || null);
   const info = db
     .prepare(
@@ -443,6 +430,7 @@ app.post('/api/keys', auth, async (req, res) => {
     );
   logActivity(req, 'add', `Thêm key YouTube "${channel_name}"`);
   res.json(db.prepare(keyWithNames + ' WHERE k.id = ?').get(info.lastInsertRowid));
+  if (needEnrich) enqueueKey(info.lastInsertRowid); // lấy tên + thông tin ở nền
 });
 
 app.put('/api/keys/:id', auth, (req, res) => {
@@ -492,6 +480,28 @@ app.post('/api/keys/:id/claim', auth, (req, res) => {
   res.json(db.prepare(keyWithNames + ' WHERE k.id = ?').get(k.id));
 });
 
+// Thêm HÀNG LOẠT key YouTube (dán nhiều link, mỗi dòng 1 link)
+app.post('/api/keys/bulk', auth, (req, res) => {
+  const { urls, category, country } = req.body || {};
+  if (!category || !String(category).trim()) return res.status(400).json({ error: 'Vui lòng nhập chủ đề cho cả nhóm' });
+  const list = (Array.isArray(urls) ? urls : String(urls || '').split(/\r?\n/)).map((s) => String(s).trim()).filter(Boolean);
+  if (!list.length) return res.status(400).json({ error: 'Chưa dán link nào' });
+  const existNorms = new Set(db.prepare('SELECT url FROM keys').all().map((k) => normalizeUrl(k.url)));
+  let added = 0, skipped = 0; const newIds = [];
+  for (const url of list) {
+    const norm = normalizeUrl(url);
+    if (!norm || existNorms.has(norm)) { skipped++; continue; }
+    existNorms.add(norm);
+    const m = url.match(/@([^/?#]+)/); const name = m ? m[1] : url;
+    const out = db.prepare("INSERT INTO keys (category, country, channel_name, url, status, added_by) VALUES (?,?,?,?, 'todo', ?)")
+      .run(String(category).trim(), country || null, name, url, req.user.id);
+    newIds.push(out.lastInsertRowid); added++;
+  }
+  newIds.forEach(enqueueKey);
+  logActivity(req, 'add', `Thêm hàng loạt ${added} key YouTube (chủ đề "${String(category).trim()}")`);
+  res.json({ added, skipped, total: list.length });
+});
+
 // ============ KÊNH TIKTOK ============
 const TT_STATUS = ['active', 'building', 'banned', 'paused'];
 const tiktokWithNames = `
@@ -508,6 +518,52 @@ function saveSnapshot(channelId, followers, likes, video_count) {
   const ex = db.prepare('SELECT id FROM tiktok_snapshots WHERE channel_id=? AND snap_date=?').get(channelId, today);
   if (ex) db.prepare('UPDATE tiktok_snapshots SET followers=?, likes=?, video_count=? WHERE id=?').run(followers, likes, video_count, ex.id);
   else db.prepare('INSERT INTO tiktok_snapshots (channel_id, snap_date, followers, likes, video_count) VALUES (?,?,?,?,?)').run(channelId, today, followers, likes, video_count);
+}
+
+// ====== HÀNG ĐỢI LẤY DỮ LIỆU Ở NỀN (để thêm kênh/key tức thì, không bắt người dùng chờ) ======
+const ttQueue = []; let ttQueueRunning = false;
+function enqueueTiktok(id) { if (!ttQueue.includes(id)) ttQueue.push(id); runTtQueue(); }
+async function runTtQueue() {
+  if (ttQueueRunning) return; ttQueueRunning = true;
+  while (ttQueue.length) {
+    const id = ttQueue.shift();
+    try {
+      const t = db.prepare('SELECT * FROM tiktok_channels WHERE id=?').get(id);
+      if (t) {
+        const info = await fetchTiktokInfo(t.url);
+        if (info.name || info.followers || info.likes || info.video_count) {
+          const nf = info.followers || t.followers, nl = info.likes || t.likes, nv = info.video_count || t.video_count;
+          db.prepare("UPDATE tiktok_channels SET name=?, tiktok_id=COALESCE(?,tiktok_id), avatar=COALESCE(?,avatar), bio=COALESCE(?,bio), followers=?, likes=?, video_count=?, last_synced=datetime('now') WHERE id=?")
+            .run(info.name || t.name, info.tiktok_id || null, info.avatar || null, info.bio || null, nf, nl, nv, id);
+          saveSnapshot(id, nf, nl, nv);
+        }
+      }
+    } catch (_) {}
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  ttQueueRunning = false;
+}
+
+const keyQueue = []; let keyQueueRunning = false;
+function enqueueKey(id) { if (!keyQueue.includes(id)) keyQueue.push(id); runKeyQueue(); }
+async function runKeyQueue() {
+  if (keyQueueRunning) return; keyQueueRunning = true;
+  while (keyQueue.length) {
+    const id = keyQueue.shift();
+    try {
+      const k = db.prepare('SELECT * FROM keys WHERE id=?').get(id);
+      if (k) {
+        const info = await fetchChannelInfo(k.url);
+        if (info.channel_name) {
+          const rv = Array.isArray(info.recent_videos) ? JSON.stringify(info.recent_videos) : null;
+          db.prepare("UPDATE keys SET channel_name=?, channel_id=COALESCE(?,channel_id), thumbnail=COALESCE(?,thumbnail), description=?, subscribers=?, video_count=?, recent_videos=? WHERE id=?")
+            .run(info.channel_name, info.channel_id || null, info.thumbnail || null, info.description || null, info.subscribers || null, info.video_count || null, rv, id);
+        }
+      }
+    } catch (_) {}
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  keyQueueRunning = false;
 }
 
 app.get('/api/tiktok', auth, (req, res) => {
@@ -545,17 +601,9 @@ app.post('/api/tiktok', auth, async (req, res) => {
   const all = db.prepare(tiktokWithNames).all();
   const dup = all.find((t) => normalizeUrl(t.url) === norm || (tiktok_id && t.tiktok_id === tiktok_id));
   if (dup) return res.status(409).json({ error: 'duplicate', channel: dup });
-  if (!name || followers == null) {
-    const info = await fetchTiktokInfo(url);
-    name = name || info.name || url;
-    tiktok_id = tiktok_id || info.tiktok_id;
-    avatar = avatar || info.avatar;
-    bio = bio || info.bio;
-    country = country || info.country;
-    followers = followers != null ? followers : info.followers;
-    likes = likes != null ? likes : info.likes;
-    video_count = video_count != null ? video_count : info.video_count;
-  }
+  // Tên nhanh từ handle để hiện ngay; số liệu thiếu sẽ được lấy ở nền
+  const needEnrich = (followers == null);
+  if (!name) { const m = url.match(/@([^/?#]+)/); name = (m ? m[1] : url); }
   // Nhân viên tự thêm thì mặc định kênh thuộc về mình; admin có thể giao cho ai đó
   const owner = req.user.role === 'admin' ? (assigned_to || req.user.id) : req.user.id;
   const out = db.prepare(
@@ -572,6 +620,28 @@ app.post('/api/tiktok', auth, async (req, res) => {
   saveSnapshot(out.lastInsertRowid, Number(followers) || 0, Number(likes) || 0, Number(video_count) || 0);
   logActivity(req, 'add', `Thêm kênh TikTok "${name}"`);
   res.json(db.prepare(tiktokWithNames + ' WHERE t.id = ?').get(out.lastInsertRowid));
+  if (needEnrich) enqueueTiktok(out.lastInsertRowid); // lấy số liệu ở nền
+});
+
+// Thêm HÀNG LOẠT kênh TikTok
+app.post('/api/tiktok/bulk', auth, (req, res) => {
+  const { urls, country, status } = req.body || {};
+  const list = (Array.isArray(urls) ? urls : String(urls || '').split(/\r?\n/)).map((s) => toTiktokUrl(String(s).trim())).filter(Boolean);
+  if (!list.length) return res.status(400).json({ error: 'Chưa dán link nào' });
+  const existNorms = new Set(db.prepare('SELECT url FROM tiktok_channels').all().map((t) => normalizeUrl(t.url)));
+  let added = 0, skipped = 0; const newIds = [];
+  for (const url of list) {
+    const norm = normalizeUrl(url);
+    if (!norm || existNorms.has(norm)) { skipped++; continue; }
+    existNorms.add(norm);
+    const m = url.match(/@([^/?#]+)/); const name = m ? m[1] : url;
+    const out = db.prepare("INSERT INTO tiktok_channels (name, url, url_norm, country, status, assigned_to, added_by, last_synced) VALUES (?,?,?,?,?,?,?, datetime('now'))")
+      .run(name, url, norm, country || null, TT_STATUS.includes(status) ? status : 'active', req.user.id, req.user.id);
+    newIds.push(out.lastInsertRowid); added++;
+  }
+  newIds.forEach(enqueueTiktok);
+  logActivity(req, 'add', `Thêm hàng loạt ${added} kênh TikTok`);
+  res.json({ added, skipped, total: list.length });
 });
 
 app.put('/api/tiktok/:id', auth, (req, res) => {
@@ -627,10 +697,12 @@ app.delete('/api/tiktok/:id', auth, (req, res) => {
 // ĐỒNG BỘ TẤT CẢ kênh (chạy ngầm) — gọi bởi admin (nút) hoặc cron (SYNC_TOKEN)
 let syncing = false;
 let lastSync = { at: null, total: 0, ok: 0, running: false };
-async function syncAllTiktok() {
+async function syncAllTiktok(userId) {
   if (syncing) return;
   syncing = true;
-  const chans = db.prepare('SELECT id, url FROM tiktok_channels').all();
+  const chans = userId
+    ? db.prepare('SELECT id, url FROM tiktok_channels WHERE assigned_to=? OR added_by=?').all(userId, userId)
+    : db.prepare('SELECT id, url FROM tiktok_channels').all();
   lastSync = { at: new Date().toISOString(), total: chans.length, ok: 0, running: true };
   try {
     for (const c of chans) {
@@ -656,14 +728,15 @@ async function syncAllTiktok() {
 app.post('/api/tiktok/sync-all', (req, res) => {
   const tok = (req.headers.authorization || '').replace(/^Bearer /, '');
   const isCron = process.env.SYNC_TOKEN && tok === process.env.SYNC_TOKEN;
-  let isAdmin = false;
+  let user = null;
   if (!isCron && tok) {
-    const u = db.prepare('SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?').get(tok);
-    isAdmin = u && u.role === 'admin';
+    user = db.prepare('SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?').get(tok);
   }
-  if (!isCron && !isAdmin) return res.status(401).json({ error: 'Không có quyền' });
+  if (!isCron && !user) return res.status(401).json({ error: 'Không có quyền' });
   if (syncing) return res.json({ ok: true, message: 'Đang đồng bộ rồi', lastSync });
-  syncAllTiktok(); // chạy ngầm, không chặn
+  // Admin/cron: tất cả kênh. Nhân viên: chỉ kênh của mình
+  const scope = (isCron || (user && user.role === 'admin')) ? null : user.id;
+  syncAllTiktok(scope); // chạy ngầm, không chặn
   res.json({ ok: true, message: 'Đã bắt đầu đồng bộ ngầm' });
 });
 
