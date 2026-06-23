@@ -374,7 +374,7 @@ function drawKeys() {
     if (k.quality) subInfo.push(`<span class="quality-tag ${QUALITY_CLS[k.quality] || ''}">${esc(QUALITY[k.quality] || k.quality)}</span>`);
     if (k.subscribers) subInfo.push(`<span class="ch-sub-tag">👥 ${esc(k.subscribers)}</span>`);
     return `<tr>
-      <td>${k.category ? `<span class="cat-tag" style="${chipStyle(k.category)}">${esc(k.category)}</span>` : '<span class="muted">—</span>'}</td>
+      <td class="cat-cell">${k.category ? `<span class="cat-tag" style="${chipStyle(k.category)}">${esc(k.category)}</span>` : '<span class="muted">—</span>'}</td>
       <td><div class="cell-channel">${thumb}<div>
         <a href="${esc(k.url)}" target="_blank" rel="noopener" title="Mở kênh">${esc(k.channel_name)}</a>
         <div class="cell-sub">${subInfo.join(' ')}</div>
@@ -409,7 +409,7 @@ function drawKeys() {
     </div>
     <div class="filter-tabs">${tabsHtml}</div>
     ${list.length ? `<div class="table-wrap"><table>
-      <thead><tr><th>Chủ đề</th><th>Kênh / Key</th><th>Trạng thái</th><th>Người làm</th><th>Người thêm</th><th></th></tr></thead>
+      <thead><tr><th class="cat-cell">Chủ đề</th><th>Kênh / Key</th><th>Trạng thái</th><th>Người làm</th><th>Người thêm</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table></div>`
       : '<div class="empty"><div class="empty-icon">🔑</div>Chưa có key nào. Bấm "Thêm Key" để bắt đầu.</div>'}`;
 
