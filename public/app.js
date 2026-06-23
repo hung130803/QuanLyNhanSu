@@ -717,7 +717,7 @@ function tiktokForm(ch = null) {
       ${isEdit ? '' : '<div class="hint">Dán link đầy đủ, hoặc chỉ cần gõ ID kênh (vd: <b>@tenkenh</b>) rồi bấm "Lấy thông tin".</div>'}
       <div id="tt-preview"></div>
     </div>
-    <div class="form-row"><label>Tên kênh</label><input id="tt-name" value="${esc(ch?.name || '')}" placeholder="tự điền khi bấm 'Lấy thông tin'"></div>
+    ${isEdit ? `<div class="form-row"><label>Tên kênh</label><input id="tt-name" value="${esc(ch.name || '')}"></div>` : ''}
     <div class="form-grid">
       <div class="form-row"><label>Quốc gia (Creator Rewards)</label><select id="tt-country">${countryOpts}</select></div>
       <div class="form-row"><label>Trạng thái</label><select id="tt-status">${statusOptions}</select></div>
@@ -730,7 +730,6 @@ function tiktokForm(ch = null) {
       <div class="hint">1 key YouTube gắn được cho nhiều kênh TikTok (reup nhiều kênh cùng nội dung).</div>
     </div>
     ${isAdmin ? `<div class="form-row"><label>Giao cho nhân viên</label><select id="tt-assign"><option value="">— của tôi —</option>${staffOptions}</select></div>` : ''}
-    <div class="form-row"><label>Tổng view (tự nhập — TikTok ẩn số này)</label><input type="number" id="tt-views" min="0" value="${ch?.total_views ?? ''}"></div>
     <div class="form-row">
       <label>Tình trạng kiếm tiền</label>
       <div class="check-group">
@@ -764,7 +763,7 @@ function tiktokForm(ch = null) {
         const info = await api('/tiktok/preview', { method: 'POST', body: { url } });
         pdata = info;
         if (info.url) form.querySelector('#tt-url').value = info.url;
-        if (info.name) form.querySelector('#tt-name').value = info.name;
+        if (info.name) { const ne = form.querySelector('#tt-name'); if (ne) ne.value = info.name; }
         if (info.country) {
           const sel = form.querySelector('#tt-country');
           if (![...sel.options].some((o) => o.value === info.country))
@@ -793,14 +792,14 @@ function tiktokForm(ch = null) {
   form.onsubmit = async (e) => {
     e.preventDefault();
     const assignEl = form.querySelector('#tt-assign');
+    const nameEl = form.querySelector('#tt-name');
     const body = {
       url: form.querySelector('#tt-url').value.trim(),
-      name: form.querySelector('#tt-name').value.trim() || undefined,
+      name: (nameEl ? nameEl.value.trim() : pdata.name) || undefined,
       country: form.querySelector('#tt-country').value,
       status: form.querySelector('#tt-status').value,
       source_key_id: form.querySelector('#tt-key').value || null,
       assigned_to: assignEl ? (assignEl.value || null) : null,
-      total_views: form.querySelector('#tt-views').value,
       monetized: form.querySelector('#tt-monetized').checked,
       paypal_added: form.querySelector('#tt-paypal').checked,
       verified: form.querySelector('#tt-verified').checked,
