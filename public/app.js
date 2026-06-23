@@ -10,7 +10,7 @@ const State = {
 };
 
 async function api(path, options = {}) {
-  const opts = { headers: { 'Content-Type': 'application/json' }, ...options };
+  const opts = { cache: 'no-store', headers: { 'Content-Type': 'application/json' }, ...options };
   if (State.token) opts.headers.Authorization = 'Bearer ' + State.token;
   if (opts.body && typeof opts.body !== 'string') opts.body = JSON.stringify(opts.body);
   const res = await fetch('/api' + path, opts);
@@ -31,9 +31,24 @@ const $ = (sel) => document.querySelector(sel);
 const el = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstChild; };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtNum = (n) => Number(n || 0).toLocaleString('vi-VN');
-const fmtMoney = (n) => Number(n || 0).toLocaleString('vi-VN') + ' đ';
+const fmtMoney = (n) => '$' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const fmtDate = (d) => { if (!d) return ''; const p = d.slice(0, 10).split('-'); return `${p[2]}/${p[1]}/${p[0]}`; };
+// Thời gian dạng "x phút trước" từ chuỗi UTC của SQLite ('YYYY-MM-DD HH:MM:SS')
+const parseUtc = (s) => (s ? new Date(s.replace(' ', 'T') + 'Z') : null);
+const timeAgo = (s) => {
+  const d = parseUtc(s); if (!d || isNaN(d)) return 'chưa bao giờ';
+  const sec = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (sec < 60) return 'vừa xong';
+  if (sec < 3600) return Math.floor(sec / 60) + ' phút trước';
+  if (sec < 86400) return Math.floor(sec / 3600) + ' giờ trước';
+  return Math.floor(sec / 86400) + ' ngày trước';
+};
+const fmtDateTime = (s) => {
+  const d = parseUtc(s); if (!d || isNaN(d)) return '—';
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getHours())}:${p(d.getMinutes())} ${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
+};
 // Số gọn: 94500000 -> 94.5M
 const fmtCompact = (n) => {
   n = Number(n || 0);
@@ -96,9 +111,8 @@ function closeModal() { $('#modal-overlay').classList.add('hidden'); }
 const STATUS = {
   todo: { label: 'Chưa làm', icon: '⚪' },
   doing: { label: 'Đang làm', icon: '🔵' },
-  review: { label: 'Đợi duyệt', icon: '🟡' },
-  done: { label: 'Đã xong', icon: '🟢' },
 };
+const countryName = (cc) => { const f = REWARD_COUNTRIES.find(([c]) => c === cc); return f ? f[1] : (cc || ''); };
 const QUALITY = { ngon: 'Ngon 🔥', tot: 'Tốt', thuong: 'Thường' };
 
 // ============ AUTH ============
@@ -291,14 +305,15 @@ async function claimKey(id) {
 let keysCache = [];
 let keysFilter = 'all';
 let keysSearch = '';
-let keysOwner = 'all'; // all | mine | unassigned
+let keysOwner = 'all'; // all | mine | unassigned | <userId>
+let keysCountry = 'all';
 
 async function renderKeys() {
   $('#topbar-right').innerHTML = '';
   const expBtn = el('<button class="btn btn-ghost">⬇️ Xuất CSV</button>');
   expBtn.onclick = () => exportCsv('key-youtube.csv',
-    ['Chủ đề', 'Tên kênh', 'Link', 'Trạng thái', 'Chất lượng', 'Sub', 'Số video', 'Người làm', 'Người thêm', 'Ngày thêm'],
-    keysCache.map((k) => [k.category || '', k.channel_name, k.url, (STATUS[k.status] || {}).label || k.status, QUALITY[k.quality] || k.quality || '', k.subscribers || '', k.video_count || '', k.worker_names || '', k.added_name || '', fmtDate(k.created_at)]));
+    ['Chủ đề', 'Nước', 'Tên kênh', 'Link', 'Trạng thái', 'Chất lượng', 'Sub', 'Số video', 'Người làm', 'Người thêm', 'Ngày thêm'],
+    keysCache.map((k) => [k.category || '', k.country || '', k.channel_name, k.url, (STATUS[k.status] || {}).label || k.status, QUALITY[k.quality] || k.quality || '', k.subscribers || '', k.video_count || '', k.worker_names || '', k.added_name || '', fmtDate(k.created_at)]));
   const addBtn = el('<button class="btn btn-primary">➕ Thêm Key</button>');
   addBtn.onclick = () => keyForm();
   $('#topbar-right').appendChild(expBtn);
@@ -312,18 +327,22 @@ async function renderKeys() {
 
 function drawKeys() {
   const view = $('#view');
-  const counts = { all: keysCache.length, todo: 0, doing: 0, review: 0, done: 0 };
-  keysCache.forEach((k) => counts[k.status]++);
+  const counts = { all: keysCache.length, todo: 0, doing: 0 };
+  keysCache.forEach((k) => { if (counts[k.status] != null) counts[k.status]++; });
 
-  const tabs = [['all', 'Tất cả'], ['todo', STATUS.todo.label], ['doing', STATUS.doing.label], ['review', STATUS.review.label], ['done', STATUS.done.label]];
+  const tabs = [['all', 'Tất cả'], ['todo', STATUS.todo.label], ['doing', STATUS.doing.label]];
   const tabsHtml = tabs.map(([id, label]) =>
     `<div class="filter-tab ${keysFilter === id ? 'active' : ''}" data-f="${id}">${label}<span class="count">${counts[id]}</span></div>`).join('');
 
-  const isAdmin = State.user.role === 'admin';
   const keyPersonOptions = State.users.map((u) => `<option value="${u.id}" ${keysOwner === String(u.id) ? 'selected' : ''}>🙋 ${esc(u.name)}</option>`).join('');
+  // Danh sách nước có trong key + các nước Rewards
+  const usedCountries = [...new Set(keysCache.map((k) => k.country).filter(Boolean))];
+  const allCountries = [...new Set([...REWARD_COUNTRIES.map(([c]) => c), ...usedCountries])];
+  const countryOptions = allCountries.map((c) => `<option value="${c}" ${keysCountry === c ? 'selected' : ''}>${flag(c)} ${esc(countryName(c) || c)}</option>`).join('');
   const workerIdList = (k) => (k.worker_ids ? String(k.worker_ids).split(',') : []);
   const amWorker = (k) => workerIdList(k).includes(String(State.user.id));
   let list = keysCache.filter((k) => keysFilter === 'all' || k.status === keysFilter);
+  if (keysCountry !== 'all') list = list.filter((k) => (k.country || '') === keysCountry);
   if (keysOwner === 'mine') list = list.filter(amWorker);
   else if (keysOwner === 'unassigned') list = list.filter((k) => !k.worker_count);
   else if (/^\d+$/.test(keysOwner)) list = list.filter((k) => workerIdList(k).includes(keysOwner));
@@ -336,6 +355,7 @@ function drawKeys() {
     const st = STATUS[k.status] || STATUS.todo;
     const thumb = k.thumbnail ? `<img class="cell-thumb" src="${esc(k.thumbnail)}" onerror="this.style.visibility='hidden'">` : `<div class="cell-thumb"></div>`;
     const subInfo = [];
+    if (k.country) subInfo.push(`<span class="country-tag">${flag(k.country)} ${esc(countryName(k.country) || k.country)}</span>`);
     if (k.quality) subInfo.push(`<span class="quality-tag">${esc(QUALITY[k.quality] || k.quality)}</span>`);
     if (k.subscribers) subInfo.push(`<span class="ch-sub-tag">👥 ${esc(k.subscribers)}</span>`);
     return `<tr>
@@ -361,8 +381,12 @@ function drawKeys() {
   view.innerHTML = `
     <div class="toolbar">
       <input class="search" id="key-search" placeholder="🔍 Tìm theo tên kênh hoặc link…" value="${esc(keysSearch)}">
+      <select id="key-country">
+        <option value="all" ${keysCountry === 'all' ? 'selected' : ''}>🌍 Tất cả nước</option>
+        ${countryOptions}
+      </select>
       <select id="key-owner">
-        <option value="all" ${keysOwner === 'all' ? 'selected' : ''}>👥 Tất cả</option>
+        <option value="all" ${keysOwner === 'all' ? 'selected' : ''}>👥 Tất cả người</option>
         <option value="mine" ${keysOwner === 'mine' ? 'selected' : ''}>⭐ Key của tôi</option>
         <option value="unassigned" ${keysOwner === 'unassigned' ? 'selected' : ''}>⚪ Chưa ai nhận</option>
         ${keyPersonOptions}
@@ -376,6 +400,7 @@ function drawKeys() {
 
   view.querySelectorAll('.filter-tab').forEach((t) => t.onclick = () => { keysFilter = t.dataset.f; drawKeys(); });
   $('#key-owner').onchange = (e) => { keysOwner = e.target.value; drawKeys(); };
+  $('#key-country').onchange = (e) => { keysCountry = e.target.value; drawKeys(); };
   const search = $('#key-search');
   search.oninput = () => { keysSearch = search.value; const pos = search.selectionStart; drawKeys(); const ns = $('#key-search'); ns.focus(); ns.setSelectionRange(pos, pos); };
   view.querySelectorAll('[data-info]').forEach((b) => b.onclick = () => { const k = keysCache.find((x) => x.id == b.dataset.info); keyDetail(k); });
@@ -445,12 +470,20 @@ function keyForm(key = null) {
         </select>
       </div>
       <div class="form-row">
-        <label>Chất lượng key</label>
-        <select id="k-quality">
-          <option value="">— không chọn —</option>
-          ${Object.entries(QUALITY).map(([v, l]) => `<option value="${v}" ${key && key.quality === v ? 'selected' : ''}>${l}</option>`).join('')}
+        <label>Quốc gia (nước kiếm tiền)</label>
+        <select id="k-country">
+          <option value="">— chọn nước —</option>
+          ${REWARD_COUNTRIES.map(([c, n]) => `<option value="${c}" ${key && key.country === c ? 'selected' : ''}>${flag(c)} ${n} (${c})</option>`).join('')}
+          ${key && key.country && !REWARD_COUNTRIES.some(([c]) => c === key.country) ? `<option value="${esc(key.country)}" selected>${flag(key.country)} ${esc(key.country)}</option>` : ''}
         </select>
       </div>
+    </div>
+    <div class="form-row">
+      <label>Chất lượng key</label>
+      <select id="k-quality">
+        <option value="">— không chọn —</option>
+        ${Object.entries(QUALITY).map(([v, l]) => `<option value="${v}" ${key && key.quality === v ? 'selected' : ''}>${l}</option>`).join('')}
+      </select>
     </div>
     <div class="form-row">
       <label>Ghi chú (sẽ hiện ngoài danh sách)</label>
@@ -496,6 +529,7 @@ function keyForm(key = null) {
     const body = {
       url: form.querySelector('#k-url').value.trim(),
       category: form.querySelector('#k-category').value.trim(),
+      country: form.querySelector('#k-country').value,
       channel_name: form.querySelector('#k-name').value.trim() || undefined,
       status: form.querySelector('#k-status').value,
       quality: form.querySelector('#k-quality').value,
@@ -651,9 +685,6 @@ function drawTiktok() {
         <option value="likes" ${ttSort === 'likes' ? 'selected' : ''}>❤️ Tym cao nhất</option>
       </select>
       ${isAdmin ? `<select id="tt-person"><option value="">👥 Tất cả người</option>${personOptions}</select>` : ''}
-      <div class="spacer"></div>
-      <div class="kpi" style="padding:8px 16px;margin:0"><div class="kpi-label">Tổng follow</div><div class="kpi-value text-accent" style="font-size:18px">${fmtCompact(totalFollow)}</div></div>
-      <div class="kpi" style="padding:8px 16px;margin:0"><div class="kpi-label">Tổng tym</div><div class="kpi-value text-danger" style="font-size:18px">${fmtCompact(totalLikes)}</div></div>
     </div>
     ${list.length ? groupedHtml
       : '<div class="empty"><div class="empty-icon">📱</div>Chưa có kênh TikTok nào. Bấm "Thêm kênh TikTok" để bắt đầu.</div>'}`;
@@ -863,21 +894,37 @@ let videoFrom = '', videoTo = '';
 
 async function renderVideos() {
   $('#topbar-right').innerHTML = '';
+  const expBtn = el('<button class="btn btn-ghost">⬇️ Xuất CSV</button>');
   const addBtn = el('<button class="btn btn-primary">➕ Ghi video</button>');
   addBtn.onclick = () => videoForm();
+  $('#topbar-right').appendChild(expBtn);
   $('#topbar-right').appendChild(addBtn);
 
-  if (!videoFrom) { const d = new Date(); d.setDate(d.getDate() - 13); videoFrom = d.toISOString().slice(0, 10); videoTo = todayStr(); }
+  if (!videoFrom) { const d = new Date(); d.setDate(d.getDate() - 29); videoFrom = d.toISOString().slice(0, 10); videoTo = todayStr(); }
 
   const view = $('#view');
-  view.innerHTML = '<div class="loading">Đang tải nhật ký…</div>';
-  let logs;
-  try { logs = await api(`/videologs?from=${videoFrom}&to=${videoTo}`); } catch (e) { view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
-
-  const total = logs.reduce((a, b) => a + b.count, 0);
+  view.innerHTML = '<div class="loading">Đang tải báo cáo…</div>';
+  let report, logs;
+  try {
+    report = await api(`/report/videos?from=${videoFrom}&to=${videoTo}`);
+    logs = await api(`/videologs?from=${videoFrom}&to=${videoTo}`);
+  } catch (e) { view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
   const isAdmin = State.user.role === 'admin';
 
-  const rows = logs.map((v) => `<tr>
+  expBtn.onclick = () => exportCsv('bao-cao-video.csv',
+    ['Nhân viên', 'Tổng video', 'Số key đã làm', 'Số lần ghi', 'Ngày gần nhất'],
+    report.rows.map((r) => [r.name, r.total_videos, r.keys_count, r.log_count, r.last_day ? fmtDate(r.last_day) : '']));
+
+  const repRows = report.rows.length ? report.rows.map((r, i) => `<tr>
+    <td class="stt">${i + 1}</td>
+    <td><b>${esc(r.name)}</b></td>
+    <td><b class="text-accent" style="font-size:16px">${fmtNum(r.total_videos)}</b></td>
+    <td><b>${fmtNum(r.keys_count)}</b> key</td>
+    <td class="cell-sub">${fmtNum(r.log_count)} lần ghi</td>
+    <td class="cell-sub nowrap">${r.last_day ? fmtDate(r.last_day) : '—'}</td>
+  </tr>`).join('') : `<tr><td colspan="6"><div class="empty" style="padding:24px">Chưa có dữ liệu trong kỳ này.</div></td></tr>`;
+
+  const logRows = logs.map((v) => `<tr>
     <td class="nowrap">${fmtDate(v.log_date)}</td>
     ${isAdmin ? `<td>${esc(v.user_name)}</td>` : ''}
     <td><b class="text-accent">${fmtNum(v.count)}</b></td>
@@ -894,12 +941,21 @@ async function renderVideos() {
       <div><label class="cell-sub">Từ ngày</label><input type="date" id="v-from" value="${videoFrom}"></div>
       <div><label class="cell-sub">Đến ngày</label><input type="date" id="v-to" value="${videoTo}"></div>
       <div class="spacer"></div>
-      <div class="kpi" style="padding:10px 18px;margin:0"><div class="kpi-label">Tổng video kỳ này</div><div class="kpi-value" style="font-size:22px">${fmtNum(total)}</div></div>
+      <div class="kpi" style="padding:10px 18px;margin:0"><div class="kpi-label">Tổng video kỳ này</div><div class="kpi-value text-accent" style="font-size:22px">${fmtNum(report.totalVideos)}</div></div>
     </div>
-    ${logs.length ? `<div class="table-wrap"><table>
-      <thead><tr><th>Ngày</th>${isAdmin ? '<th>Nhân sự</th>' : ''}<th>Số video</th><th>Key</th><th>Ghi chú</th><th></th></tr></thead>
-      <tbody>${rows}</tbody></table></div>`
-      : '<div class="empty"><div class="empty-icon">🎞️</div>Chưa có nhật ký nào trong khoảng thời gian này.</div>'}`;
+    <div class="panel">
+      <div class="panel-title">📊 Báo cáo theo nhân viên &nbsp;<span class="muted" style="font-weight:400;font-size:13px">${fmtDate(videoFrom)} → ${fmtDate(videoTo)}</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>#</th><th>Nhân viên</th><th>Tổng video</th><th>Số key đã làm</th><th>Số lần ghi</th><th>Ngày gần nhất</th></tr></thead>
+        <tbody>${repRows}</tbody></table></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">📝 Chi tiết nhật ký</div>
+      ${logs.length ? `<div class="table-wrap"><table>
+        <thead><tr><th>Ngày</th>${isAdmin ? '<th>Nhân sự</th>' : ''}<th>Số video</th><th>Key</th><th>Ghi chú</th><th></th></tr></thead>
+        <tbody>${logRows}</tbody></table></div>`
+        : '<div class="empty" style="padding:24px">Chưa có nhật ký nào trong kỳ này.</div>'}
+    </div>`;
 
   $('#v-from').onchange = (e) => { videoFrom = e.target.value; renderVideos(); };
   $('#v-to').onchange = (e) => { videoTo = e.target.value; renderVideos(); };
@@ -960,19 +1016,23 @@ async function renderStaff() {
   let users;
   try { users = await api('/users'); State.users = users; } catch (e) { view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
 
-  const rows = users.map((u) => `<tr>
-    <td><div class="cell-channel"><div class="user-avatar" style="width:34px;height:34px;border-radius:9px">${esc((u.name||'U').charAt(0).toUpperCase())}</div><div><b>${esc(u.name)}</b><div class="cell-sub">@${esc(u.username)}</div></div></div></td>
+  const rows = users.map((u) => {
+    const lastMs = u.last_active ? new Date(u.last_active.replace(' ', 'T') + 'Z').getTime() : 0;
+    const online = lastMs && (Date.now() - lastMs < 3 * 60 * 1000);
+    return `<tr>
+    <td><div class="cell-channel"><div class="user-avatar ${online ? 'is-online' : ''}" style="width:34px;height:34px;border-radius:9px">${esc((u.name||'U').charAt(0).toUpperCase())}</div><div><b>${esc(u.name)}</b><div class="cell-sub">@${esc(u.username)}</div></div></div></td>
     <td><span class="badge ${u.role}">${u.role === 'admin' ? 'Quản trị' : 'Nhân sự'}</span></td>
+    <td>${online ? '<span class="badge done dot">Đang online</span>' : `<span class="cell-sub">⚫ ${u.last_active ? timeAgo(u.last_active) : 'chưa h.động'}</span>`}</td>
+    <td class="cell-sub nowrap">${u.last_login ? fmtDateTime(u.last_login) : '<span class="muted">chưa đăng nhập</span>'}</td>
     <td>${u.active ? '<span class="badge done dot">Hoạt động</span>' : '<span class="badge todo dot">Đã khóa</span>'}</td>
-    <td class="cell-sub nowrap">${fmtDate(u.created_at)}</td>
     <td><div class="row-actions">
       <button class="btn-icon" data-uedit="${u.id}">✏️</button>
       ${u.id !== State.user.id ? `<button class="btn-icon" data-udel="${u.id}">🗑️</button>` : ''}
     </div></td>
-  </tr>`).join('');
+  </tr>`; }).join('');
 
   view.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>Họ tên</th><th>Vai trò</th><th>Trạng thái</th><th>Ngày tạo</th><th></th></tr></thead>
+    <thead><tr><th>Họ tên</th><th>Vai trò</th><th>Tình trạng online</th><th>Đăng nhập gần nhất</th><th>Tài khoản</th><th></th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
 
   view.querySelectorAll('[data-uedit]').forEach((b) => b.onclick = () => { const u = users.find((x) => x.id == b.dataset.uedit); staffForm(u); });
@@ -1017,17 +1077,24 @@ async function delStaff(id) {
 }
 
 // ============ FINANCE (admin) ============
+let financeFrom = '', financeTo = '';
 async function renderFinance() {
   $('#topbar-right').innerHTML = '';
   const addRev = el('<button class="btn btn-primary">➕ Ghi thu/chi</button>');
   addRev.onclick = () => financeForm();
   $('#topbar-right').appendChild(addRev);
 
+  if (!financeFrom) { const d = new Date(); d.setDate(d.getDate() - 29); financeFrom = d.toISOString().slice(0, 10); financeTo = todayStr(); }
+
   const view = $('#view');
   view.innerHTML = '<div class="loading">Đang tải…</div>';
-  let rows;
-  try { rows = await api('/finance'); } catch (e) { view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  let all;
+  try { all = await api('/finance'); } catch (e) { view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
 
+  const rows = all.filter((r) => {
+    const d = (r.log_date || '').slice(0, 10);
+    return d >= financeFrom && d <= financeTo;
+  });
   const rev = rows.filter((r) => r.type === 'revenue').reduce((a, b) => a + b.amount, 0);
   const cost = rows.filter((r) => r.type === 'cost').reduce((a, b) => a + b.amount, 0);
   const profit = rev - cost;
@@ -1042,16 +1109,23 @@ async function renderFinance() {
   </tr>`).join('');
 
   view.innerHTML = `
+    <div class="toolbar">
+      <div><label class="cell-sub">Từ ngày</label><input type="date" id="f-from" value="${financeFrom}"></div>
+      <div><label class="cell-sub">Đến ngày</label><input type="date" id="f-to" value="${financeTo}"></div>
+      <div class="muted" style="align-self:flex-end;font-size:12px">Tiền tính bằng USD ($)</div>
+    </div>
     <div class="kpi-grid">
-      <div class="kpi accent"><div class="kpi-icon">💵</div><div class="kpi-label">Tổng doanh thu</div><div class="kpi-value">${fmtNum(rev)}</div><div class="kpi-sub">đồng</div></div>
-      <div class="kpi warn"><div class="kpi-icon">💸</div><div class="kpi-label">Tổng chi phí</div><div class="kpi-value">${fmtNum(cost)}</div><div class="kpi-sub">đồng</div></div>
-      <div class="kpi ${profit >= 0 ? 'primary' : 'danger'}"><div class="kpi-icon">📈</div><div class="kpi-label">Lợi nhuận</div><div class="kpi-value">${fmtNum(profit)}</div><div class="kpi-sub">đồng</div></div>
+      <div class="kpi accent"><div class="kpi-icon">💵</div><div class="kpi-label">Doanh thu (kỳ này)</div><div class="kpi-value">${fmtMoney(rev)}</div></div>
+      <div class="kpi warn"><div class="kpi-icon">💸</div><div class="kpi-label">Chi phí (kỳ này)</div><div class="kpi-value">${fmtMoney(cost)}</div></div>
+      <div class="kpi ${profit >= 0 ? 'primary' : 'danger'}"><div class="kpi-icon">📈</div><div class="kpi-label">Lợi nhuận (kỳ này)</div><div class="kpi-value">${fmtMoney(profit)}</div></div>
     </div>
     ${rows.length ? `<div class="table-wrap"><table>
-      <thead><tr><th>Ngày</th><th>Loại</th><th>Số tiền</th><th>Key</th><th>Ghi chú</th><th></th></tr></thead>
+      <thead><tr><th>Ngày</th><th>Loại</th><th>Số tiền ($)</th><th>Key</th><th>Ghi chú</th><th></th></tr></thead>
       <tbody>${trs}</tbody></table></div>`
-      : '<div class="empty"><div class="empty-icon">💰</div>Chưa có khoản thu/chi nào.</div>'}`;
+      : '<div class="empty"><div class="empty-icon">💰</div>Chưa có khoản thu/chi nào trong kỳ này.</div>'}`;
 
+  $('#f-from').onchange = (e) => { financeFrom = e.target.value; renderFinance(); };
+  $('#f-to').onchange = (e) => { financeTo = e.target.value; renderFinance(); };
   view.querySelectorAll('[data-fdel]').forEach((b) => b.onclick = async () => {
     if (!confirm('Xóa khoản này?')) return;
     try { await api('/finance/' + b.dataset.fdel, { method: 'DELETE' }); toast('Đã xóa'); renderFinance(); } catch (e) { toast(e.message, 'err'); }
@@ -1063,7 +1137,7 @@ function financeForm() {
   const form = el(`<form>
     <div class="form-grid">
       <div class="form-row"><label>Loại</label><select id="f-type"><option value="revenue">💵 Doanh thu</option><option value="cost">💸 Chi phí</option></select></div>
-      <div class="form-row"><label>Số tiền (đồng)</label><input type="number" id="f-amount" min="0" step="1000" value="0"></div>
+      <div class="form-row"><label>Số tiền ($ USD)</label><input type="number" id="f-amount" min="0" step="0.01" value="0"></div>
     </div>
     <div class="form-grid">
       <div class="form-row"><label>Ngày</label><input type="date" id="f-date" value="${todayStr()}"></div>

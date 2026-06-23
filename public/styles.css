@@ -1,29 +1,35 @@
 :root {
-  --bg: #0f1115;
-  --bg-soft: #161a22;
-  --card: #1b2029;
-  --card-hover: #222836;
-  --border: #2a313d;
-  --text: #e6e9ef;
-  --text-dim: #9aa3b2;
-  --primary: #6c5ce7;
-  --primary-soft: #8b7cf0;
-  --accent: #00d2a8;
-  --warn: #ffb020;
-  --danger: #ff5470;
-  --info: #3aa0ff;
-  --shadow: 0 8px 30px rgba(0,0,0,.35);
-  --radius: 14px;
+  --bg: #0b0e14;
+  --bg-soft: #131722;
+  --card: #161b27;
+  --card-hover: #1e2535;
+  --border: #252c3a;
+  --border-soft: #1d2330;
+  --text: #eef1f7;
+  --text-dim: #94a0b4;
+  --primary: #7c6cf0;
+  --primary-soft: #9d90f5;
+  --accent: #19d3a2;
+  --warn: #ffb43a;
+  --danger: #ff5d7a;
+  --info: #46a6ff;
+  --shadow: 0 10px 40px rgba(0,0,0,.45);
+  --shadow-sm: 0 2px 10px rgba(0,0,0,.25);
+  --radius: 16px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
 body {
-  font-family: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
-  background: var(--bg);
+  font-family: 'Segoe UI', system-ui, -apple-system, 'Roboto', 'Helvetica Neue', sans-serif;
+  background:
+    radial-gradient(900px 500px at 100% -5%, #7c6cf012 0%, transparent 55%),
+    radial-gradient(800px 500px at -10% 110%, #19d3a20d 0%, transparent 50%),
+    var(--bg);
   color: var(--text);
   font-size: 14.5px;
-  line-height: 1.5;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
 }
 .hidden { display: none !important; }
 
@@ -366,3 +372,69 @@ td.stt { color: var(--text-dim); font-weight: 700; text-align: center; width: 36
   .grid-2 { grid-template-columns: 1fr; }
   .view { padding: 18px; }
 }
+
+/* ============================================================
+   NÂNG CẤP GIAO DIỆN (lớp hiện đại hoá)
+   ============================================================ */
+/* Nước trong key + chấm online */
+.country-tag { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: #46a6ff1a; color: #8cc6ff; font-weight: 600; }
+.user-avatar.is-online { position: relative; }
+.user-avatar.is-online::after { content: ''; position: absolute; right: -2px; bottom: -2px; width: 11px; height: 11px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg-soft); box-shadow: 0 0 8px var(--accent); }
+
+/* Sidebar tinh tế hơn */
+.sidebar { background: linear-gradient(180deg, #131722, #0e121b); }
+.brand-name { background: linear-gradient(90deg, var(--primary-soft), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.nav a { font-size: 14px; letter-spacing: .2px; }
+.nav a.active { box-shadow: 0 6px 18px -4px var(--primary); background: linear-gradient(90deg, var(--primary), #6453e0); }
+.nav a:not(.active):hover { transform: translateX(2px); }
+
+/* KPI sang hơn: viền sáng + gradient nhẹ */
+.kpi { background: linear-gradient(160deg, var(--card), #141925); border-radius: 18px; box-shadow: var(--shadow-sm); transition: transform .14s, border-color .14s; }
+.kpi-value { font-weight: 800; letter-spacing: -.5px; background: linear-gradient(180deg, #fff, #c9cfdc); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.kpi.accent .kpi-value, .kpi.warn .kpi-value, .kpi.info .kpi-value, .kpi.danger .kpi-value, .kpi.primary .kpi-value { -webkit-text-fill-color: currentColor; }
+
+/* Panel & bảng */
+.panel { background: linear-gradient(160deg, var(--card), #141925); border-radius: 18px; box-shadow: var(--shadow-sm); }
+.panel-title { font-size: 15.5px; letter-spacing: -.2px; }
+.table-wrap { box-shadow: var(--shadow-sm); }
+th { font-size: 11.5px; letter-spacing: .6px; background: #11151f; }
+tbody tr { transition: background .12s; }
+tbody tr:hover { background: #1c2333; }
+td { border-top: 1px solid var(--border-soft); }
+
+/* Nút bấm bo tròn, mượt */
+.btn { border-radius: 11px; letter-spacing: .2px; transition: transform .08s, filter .15s, background .15s, box-shadow .15s; }
+.btn-primary { background: linear-gradient(135deg, var(--primary), #6a59e8); box-shadow: 0 6px 16px -6px var(--primary); }
+.btn-primary:hover { filter: brightness(1.08); box-shadow: 0 8px 22px -6px var(--primary); }
+.btn:active { transform: translateY(1px) scale(.99); }
+.btn-icon { border-radius: 9px; }
+
+/* Ô nhập focus rõ ràng */
+input, select, textarea { border-radius: 11px; transition: border-color .15s, box-shadow .15s, background .15s; }
+input:focus, select:focus, textarea:focus { background: var(--bg); }
+
+/* Badge & chip mềm hơn */
+.badge { border-radius: 8px; font-weight: 600; letter-spacing: .2px; }
+.filter-tab { border-radius: 11px; transition: transform .1s, background .15s; }
+.filter-tab.active { box-shadow: 0 6px 16px -6px var(--primary); }
+.cat-tag { box-shadow: inset 0 0 0 1px #7c6cf033; }
+
+/* Khối quốc gia (TikTok) đậm chất hơn */
+.country-head { background: linear-gradient(90deg, #7c6cf022, transparent 70%); }
+.country-name { letter-spacing: -.2px; }
+
+/* Modal mượt */
+.modal { border-radius: 20px; box-shadow: 0 24px 70px rgba(0,0,0,.6); animation: pop .16s ease-out; }
+@keyframes pop { from { transform: scale(.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.modal-overlay { animation: fade .15s ease-out; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* Login card lung linh hơn */
+.login-card { border-radius: 24px; box-shadow: 0 30px 80px rgba(0,0,0,.5); }
+.login-card h1 { background: linear-gradient(90deg, var(--primary-soft), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* Thanh cuộn đẹp */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2a3243; border-radius: 10px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover { background: #3a455c; }

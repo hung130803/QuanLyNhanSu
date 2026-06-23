@@ -154,6 +154,17 @@ addTtCol('monetized', 'INTEGER NOT NULL DEFAULT 0');
 addTtCol('paypal_added', 'INTEGER NOT NULL DEFAULT 0');
 addTtCol('verified', 'INTEGER NOT NULL DEFAULT 0');
 
+addKeyCol('country', 'TEXT'); // quốc gia của key (nước kiếm tiền: US, JP, KR...)
+
+// Thêm cột theo dõi đăng nhập cho users
+const userCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+const addUserCol = (name, type) => { if (!userCols.includes(name)) db.exec(`ALTER TABLE users ADD COLUMN ${name} ${type}`); };
+addUserCol('last_login', 'TEXT');
+addUserCol('last_active', 'TEXT');
+
+// Bỏ trạng thái "đợi duyệt" và "đã xong" -> gộp về "đang làm"
+try { db.prepare("UPDATE keys SET status='doing' WHERE status IN ('review','done')").run(); } catch (_) {}
+
 // Chuyển dữ liệu cũ: key đã giao 1 người -> bảng nhiều người (key_workers)
 try {
   db.prepare(`INSERT OR IGNORE INTO key_workers (key_id, user_id)

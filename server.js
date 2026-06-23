@@ -19,6 +19,8 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: '256kb' }));
+// API không bao giờ được cache (để thêm/sửa là thấy ngay, không phải tải lại trang)
+app.use('/api', (req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 // Chống cache file giao diện -> trình duyệt luôn lấy bản mới nhất sau khi cập nhật
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, filePath) => {
@@ -245,6 +247,12 @@ function auth(req, res, next) {
     return res.status(401).json({ error: 'Phiên hết hạn, đăng nhập lại' });
   req.user = row;
   req.token = tok;
+  // Cập nhật "hoạt động lần cuối" (tối đa 1 lần/phút để khỏi ghi liên tục)
+  const now = Date.now();
+  const lastMs = row.last_active ? new Date(row.last_active.replace(' ', 'T') + 'Z').getTime() : 0;
+  if (!lastMs || now - lastMs > 60000) {
+    try { db.prepare("UPDATE users SET last_active = datetime('now') WHERE id = ?").run(row.id); } catch (_) {}
+  }
   next();
 }
 
@@ -261,6 +269,8 @@ const publicUser = (u) => ({
   role: u.role,
   active: u.active,
   created_at: u.created_at,
+  last_login: u.last_login,
+  last_active: u.last_active,
 });
 
 // ============ AUTH API ============
@@ -274,6 +284,7 @@ app.post('/api/login', loginLimiter, (req, res) => {
   if (!u.active) return res.status(403).json({ error: 'Tài khoản đã bị khóa' });
   const tok = token();
   db.prepare('INSERT INTO sessions (token, user_id) VALUES (?, ?)').run(tok, u.id);
+  db.prepare("UPDATE users SET last_login = datetime('now'), last_active = datetime('now') WHERE id = ?").run(u.id);
   res.json({ token: tok, user: publicUser(u) });
 });
 
@@ -368,7 +379,7 @@ app.get('/api/keys', auth, (req, res) => {
 
 app.post('/api/keys', auth, async (req, res) => {
   let {
-    url, channel_name, category, status, quality, assigned_to, note,
+    url, channel_name, category, country, status, quality, assigned_to, note,
     thumbnail, channel_id, description, subscribers, video_count, recent_videos,
   } = req.body || {};
   if (!url) return res.status(400).json({ error: 'Thiếu link kênh' });
@@ -398,11 +409,12 @@ app.post('/api/keys', auth, async (req, res) => {
   const rv = Array.isArray(recent_videos) ? JSON.stringify(recent_videos) : (recent_videos || null);
   const info = db
     .prepare(
-      `INSERT INTO keys (category, channel_name, url, channel_id, thumbnail, description, subscribers, video_count, recent_videos, status, quality, assigned_to, added_by, note)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO keys (category, country, channel_name, url, channel_id, thumbnail, description, subscribers, video_count, recent_videos, status, quality, assigned_to, added_by, note)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       String(category).trim(),
+      country || null,
       channel_name,
       url,
       channel_id || null,
@@ -411,7 +423,7 @@ app.post('/api/keys', auth, async (req, res) => {
       subscribers || null,
       video_count || null,
       rv,
-      ['todo', 'doing', 'review', 'done'].includes(status) ? status : 'todo',
+      ['todo', 'doing'].includes(status) ? status : 'todo',
       quality || null,
       assigned_to || null,
       req.user.id,
@@ -423,15 +435,16 @@ app.post('/api/keys', auth, async (req, res) => {
 app.put('/api/keys/:id', auth, (req, res) => {
   const k = db.prepare('SELECT * FROM keys WHERE id = ?').get(req.params.id);
   if (!k) return res.status(404).json({ error: 'Không tìm thấy key' });
-  const { channel_name, url, category, status, quality, assigned_to, note } = req.body || {};
+  const { channel_name, url, category, country, status, quality, assigned_to, note } = req.body || {};
   db.prepare(
-    `UPDATE keys SET category = ?, channel_name = ?, url = ?, status = ?, quality = ?, assigned_to = ?, note = ?, updated_at = datetime('now')
+    `UPDATE keys SET category = ?, country = ?, channel_name = ?, url = ?, status = ?, quality = ?, assigned_to = ?, note = ?, updated_at = datetime('now')
      WHERE id = ?`
   ).run(
     category !== undefined && String(category).trim() ? String(category).trim() : k.category,
+    country !== undefined ? country : k.country,
     channel_name ?? k.channel_name,
     url ?? k.url,
-    ['todo', 'doing', 'review', 'done'].includes(status) ? status : k.status,
+    ['todo', 'doing'].includes(status) ? status : k.status,
     quality !== undefined ? quality : k.quality,
     assigned_to !== undefined ? assigned_to || null : k.assigned_to,
     note !== undefined ? note : k.note,
@@ -654,6 +667,27 @@ app.get('/api/videologs', auth, (req, res) => {
   res.json(db.prepare(sql).all(...params));
 });
 
+// Báo cáo: trong khoảng ngày, mỗi người làm bao nhiêu video, bao nhiêu key
+app.get('/api/report/videos', auth, (req, res) => {
+  const { from, to } = req.query;
+  const params = [];
+  let where = 'WHERE 1=1';
+  if (from) { where += ' AND v.log_date >= ?'; params.push(from); }
+  if (to) { where += ' AND v.log_date <= ?'; params.push(to); }
+  if (req.user.role !== 'admin') { where += ' AND v.user_id = ?'; params.push(req.user.id); }
+  const rows = db.prepare(`
+    SELECT u.id, u.name,
+      COALESCE(SUM(v.count),0) AS total_videos,
+      COUNT(DISTINCT v.key_id) AS keys_count,
+      COUNT(v.id) AS log_count,
+      MAX(v.log_date) AS last_day
+    FROM video_logs v JOIN users u ON u.id = v.user_id
+    ${where}
+    GROUP BY u.id ORDER BY total_videos DESC`).all(...params);
+  const totalVideos = rows.reduce((a, b) => a + b.total_videos, 0);
+  res.json({ rows, totalVideos });
+});
+
 app.post('/api/videologs', auth, (req, res) => {
   let { key_id, user_id, log_date, count, note } = req.body || {};
   if (!log_date) log_date = new Date().toISOString().slice(0, 10);
@@ -727,7 +761,7 @@ app.get('/api/stats', auth, (req, res) => {
   const me = req.user.id;
 
   // Key theo trạng thái
-  const keyStatus = { todo: 0, doing: 0, review: 0, done: 0 };
+  const keyStatus = { todo: 0, doing: 0 };
   db.prepare('SELECT status, COUNT(*) c FROM keys GROUP BY status').all()
     .forEach((r) => { if (keyStatus[r.status] != null) keyStatus[r.status] = r.c; });
   const totalKeys = Object.values(keyStatus).reduce((a, b) => a + b, 0);
