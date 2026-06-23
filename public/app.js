@@ -108,6 +108,16 @@ function openModal(title, bodyEl) {
 }
 function closeModal() { $('#modal-overlay').classList.add('hidden'); }
 
+// Khóa nút "submit" khi đang xử lý (chống bấm nhiều lần -> thêm trùng)
+function lockBtn(form) {
+  const b = form.querySelector('button[type="submit"]');
+  if (!b) return () => {};
+  b.disabled = true;
+  const orig = b.innerHTML;
+  b.innerHTML = '⏳ Đang xử lý…';
+  return () => { b.disabled = false; b.innerHTML = orig; };
+}
+
 const STATUS = {
   todo: { label: 'Chưa làm', icon: '⚪' },
   doing: { label: 'Đang làm', icon: '🔵' },
@@ -502,10 +512,12 @@ function keyForm(key = null) {
   let previewData = { thumbnail: key?.thumbnail, channel_id: key?.channel_id };
 
   if (!isEdit) {
-    form.querySelector('#k-fetch').onclick = async () => {
+    form.querySelector('#k-fetch').onclick = async (ev) => {
+      const fb = ev.currentTarget; if (fb.disabled) return;
       const url = form.querySelector('#k-url').value.trim();
       if (!url) return toast('Hãy dán link kênh trước', 'err');
       const pv = form.querySelector('#k-preview');
+      fb.disabled = true;
       pv.innerHTML = '<div class="hint">Đang lấy thông tin kênh…</div>';
       try {
         const info = await api('/keys/preview', { method: 'POST', body: { url } });
@@ -525,6 +537,7 @@ function keyForm(key = null) {
           pv.innerHTML = '<div class="hint text-danger">Không tự lấy được tên. Bạn vẫn có thể thêm, tên sẽ là link.</div>';
         }
       } catch (e) { pv.innerHTML = `<div class="hint text-danger">${esc(e.message)}</div>`; }
+      finally { fb.disabled = false; }
     };
   }
 
@@ -541,6 +554,7 @@ function keyForm(key = null) {
     };
     if (!body.category) return toast('Vui lòng nhập chủ đề key', 'err');
     if (!body.url) return toast('Thiếu link kênh', 'err');
+    const unlock = lockBtn(form);
     try {
       if (isEdit) { await api('/keys/' + key.id, { method: 'PUT', body }); toast('Đã cập nhật key'); }
       else {
@@ -556,7 +570,7 @@ function keyForm(key = null) {
         const k = err.data.key;
         toast(`⚠️ Trùng! "${k.channel_name}" đã được ${k.added_name || 'ai đó'} thêm rồi.`, 'err');
       } else toast(err.message, 'err');
-    }
+    } finally { unlock(); }
   };
 
   openModal(isEdit ? 'Sửa Key' : 'Thêm Key mới', form);
@@ -756,10 +770,12 @@ function tiktokForm(ch = null) {
 
   let pdata = {};
   if (!isEdit) {
-    form.querySelector('#tt-fetch').onclick = async () => {
+    form.querySelector('#tt-fetch').onclick = async (ev) => {
+      const fb = ev.currentTarget; if (fb.disabled) return;
       const url = form.querySelector('#tt-url').value.trim();
       if (!url) return toast('Dán link TikTok trước', 'err');
       const pv = form.querySelector('#tt-preview');
+      fb.disabled = true;
       pv.innerHTML = '<div class="hint">Đang lấy thông tin kênh…</div>';
       try {
         const info = await api('/tiktok/preview', { method: 'POST', body: { url } });
@@ -788,6 +804,7 @@ function tiktokForm(ch = null) {
           pv.innerHTML = dupWarn + '<div class="dup-warn">⚠️ Chưa lấy được dữ liệu (TikTok chặn tạm). Bạn cứ điền Tên + chọn nước rồi bấm "Thêm kênh" — hệ thống sẽ tự lấy số liệu lại sau.</div>';
         }
       } catch (e) { pv.innerHTML = `<div class="hint text-danger">${esc(e.message)}</div>`; }
+      finally { fb.disabled = false; }
     };
   }
 
@@ -808,6 +825,7 @@ function tiktokForm(ch = null) {
       note: form.querySelector('#tt-note').value.trim(),
     };
     if (!body.url) return toast('Thiếu link/ID kênh', 'err');
+    const unlock = lockBtn(form);
     try {
       if (isEdit) { await api('/tiktok/' + ch.id, { method: 'PUT', body }); toast('Đã cập nhật'); }
       else {
@@ -822,7 +840,7 @@ function tiktokForm(ch = null) {
         const c = err.data.channel;
         toast(`⚠️ Trùng! "${c.name}" đã được ${c.added_name || 'ai đó'} thêm rồi.`, 'err');
       } else toast(err.message, 'err');
-    }
+    } finally { unlock(); }
   };
   openModal(isEdit ? 'Sửa kênh TikTok' : 'Thêm kênh TikTok', form);
 }
@@ -989,11 +1007,12 @@ function videoForm(log = null) {
       note: form.querySelector('#v-note').value.trim(),
     };
     if (isAdmin) body.user_id = form.querySelector('#v-user').value;
+    const unlock = lockBtn(form);
     try {
       if (isEdit) { await api('/videologs/' + log.id, { method: 'PUT', body }); toast('Đã cập nhật'); }
       else { await api('/videologs', { method: 'POST', body }); toast('Đã ghi nhận video'); }
       closeModal(); renderVideos();
-    } catch (err) { toast(err.message, 'err'); }
+    } catch (err) { toast(err.message, 'err'); } finally { unlock(); }
   };
   openModal(isEdit ? 'Sửa nhật ký' : 'Ghi nhận video', form);
 }
@@ -1057,6 +1076,7 @@ function staffForm(user = null) {
     const body = { name: form.querySelector('#u-name').value.trim(), role: form.querySelector('#u-role').value };
     const pw = form.querySelector('#u-password').value;
     if (pw) body.password = pw;
+    const unlock = lockBtn(form);
     try {
       if (isEdit) { body.active = Number(form.querySelector('#u-active').value); await api('/users/' + user.id, { method: 'PUT', body }); toast('Đã cập nhật'); }
       else {
@@ -1065,7 +1085,7 @@ function staffForm(user = null) {
         await api('/users', { method: 'POST', body }); toast('Đã tạo nhân sự');
       }
       closeModal(); renderStaff();
-    } catch (err) { toast(err.message, 'err'); }
+    } catch (err) { toast(err.message, 'err'); } finally { unlock(); }
   };
   openModal(isEdit ? 'Sửa nhân sự' : 'Thêm nhân sự', form);
 }
@@ -1155,8 +1175,9 @@ function financeForm() {
       key_id: form.querySelector('#f-key').value || null,
       note: form.querySelector('#f-note').value.trim(),
     };
+    const unlock = lockBtn(form);
     try { await api('/finance', { method: 'POST', body }); toast('Đã lưu'); closeModal(); renderFinance(); }
-    catch (err) { toast(err.message, 'err'); }
+    catch (err) { toast(err.message, 'err'); } finally { unlock(); }
   };
   openModal('Ghi khoản thu / chi', form);
 }
@@ -1180,10 +1201,11 @@ function renderSettings() {
     </div>`;
   $('#pw-form').onsubmit = async (e) => {
     e.preventDefault();
+    const unlock = lockBtn($('#pw-form'));
     try {
       await api('/me/password', { method: 'POST', body: { oldPassword: $('#pw-old').value, newPassword: $('#pw-new').value } });
       toast('Đã đổi mật khẩu'); $('#pw-form').reset();
-    } catch (err) { toast(err.message, 'err'); }
+    } catch (err) { toast(err.message, 'err'); } finally { unlock(); }
   };
 }
 
