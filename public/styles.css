@@ -260,7 +260,7 @@ tbody tr:hover { background: var(--card-hover); }
 .badge.banned { background: #ff547033; color: #ff8aa0; }
 
 /* Khối số liệu TikTok (chi tiết) */
-.tt-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0; }
+.tt-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0; }
 .tt-stat { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 12px; padding: 12px 8px; text-align: center; }
 .tt-stat-val { font-size: 20px; font-weight: 800; }
 .tt-stat-lbl { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
@@ -378,6 +378,10 @@ td.stt { color: var(--text-dim); font-weight: 700; text-align: center; width: 36
    ============================================================ */
 /* Nước trong key + chấm online */
 .country-tag { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: #46a6ff1a; color: #8cc6ff; font-weight: 600; }
+/* Màu phân loại chất lượng key */
+.quality-tag.q-ngon { background: #ff5d7a26; color: #ff96aa; box-shadow: inset 0 0 0 1px #ff5d7a44; }
+.quality-tag.q-tot { background: #19d3a226; color: #5fe6c4; box-shadow: inset 0 0 0 1px #19d3a244; }
+.quality-tag.q-thuong { background: #8a93a322; color: #aeb6c4; }
 .user-avatar.is-online { position: relative; }
 .user-avatar.is-online::after { content: ''; position: absolute; right: -2px; bottom: -2px; width: 11px; height: 11px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg-soft); box-shadow: 0 0 8px var(--accent); }
 

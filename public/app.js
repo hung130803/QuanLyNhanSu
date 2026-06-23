@@ -113,6 +113,10 @@ const STATUS = {
   doing: { label: 'Đang làm', icon: '🔵' },
 };
 const countryName = (cc) => { const f = REWARD_COUNTRIES.find(([c]) => c === cc); return f ? f[1] : (cc || ''); };
+// Sinh màu ổn định theo chuỗi (để phân loại theo màu: chủ đề, nước...)
+const hashHue = (s) => { let h = 0; for (const c of String(s || '')) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 360; };
+const chipStyle = (s) => { const h = hashHue(s); return `background:hsl(${h} 42% 19%);color:hsl(${h} 88% 74%);border:1px solid hsl(${h} 45% 30%)`; };
+const QUALITY_CLS = { ngon: 'q-ngon', tot: 'q-tot', thuong: 'q-thuong' };
 const QUALITY = { ngon: 'Ngon 🔥', tot: 'Tốt', thuong: 'Thường' };
 
 // ============ AUTH ============
@@ -222,8 +226,8 @@ async function renderDashboard() {
     <div class="kpi info clickable" data-go="keys-mine"><div class="kpi-icon">⭐</div><div class="kpi-label">Key của tôi đang làm</div><div class="kpi-value">${fmtNum(s.myKeys)}</div><div class="kpi-sub">xem key của tôi →</div></div>
     <div class="kpi primary clickable" data-go="tiktok"><div class="kpi-icon">📱</div><div class="kpi-label">${s.isAdmin ? 'Tổng kênh TikTok' : 'Kênh TikTok của tôi'}</div><div class="kpi-value">${fmtNum(s.tiktok.channels)}</div><div class="kpi-sub">mở danh sách →</div></div>`;
   if (s.finance) kpis += `
-    <div class="kpi accent clickable" data-go="finance"><div class="kpi-icon">💵</div><div class="kpi-label">Doanh thu tháng</div><div class="kpi-value">${fmtNum(s.finance.revenueMonth)}</div><div class="kpi-sub">đồng →</div></div>
-    <div class="kpi ${s.finance.profitMonth >= 0 ? 'primary' : 'danger'} clickable" data-go="finance"><div class="kpi-icon">📈</div><div class="kpi-label">Lợi nhuận tháng</div><div class="kpi-value">${fmtNum(s.finance.profitMonth)}</div><div class="kpi-sub">tổng tất cả: ${fmtMoney(s.finance.profitAll)} →</div></div>`;
+    <div class="kpi accent clickable" data-go="finance"><div class="kpi-icon">💵</div><div class="kpi-label">Doanh thu tháng</div><div class="kpi-value">${fmtMoney(s.finance.revenueMonth)}</div><div class="kpi-sub">xem chi tiết →</div></div>
+    <div class="kpi ${s.finance.profitMonth >= 0 ? 'primary' : 'danger'} clickable" data-go="finance"><div class="kpi-icon">📈</div><div class="kpi-label">Lợi nhuận tháng</div><div class="kpi-value">${fmtMoney(s.finance.profitMonth)}</div><div class="kpi-sub">tổng: ${fmtMoney(s.finance.profitAll)} →</div></div>`;
 
   // Key đã có người làm — gom theo từng người (ai cũng thấy để khỏi trùng)
   const me = State.user.name;
@@ -355,11 +359,11 @@ function drawKeys() {
     const st = STATUS[k.status] || STATUS.todo;
     const thumb = k.thumbnail ? `<img class="cell-thumb" src="${esc(k.thumbnail)}" onerror="this.style.visibility='hidden'">` : `<div class="cell-thumb"></div>`;
     const subInfo = [];
-    if (k.country) subInfo.push(`<span class="country-tag">${flag(k.country)} ${esc(countryName(k.country) || k.country)}</span>`);
-    if (k.quality) subInfo.push(`<span class="quality-tag">${esc(QUALITY[k.quality] || k.quality)}</span>`);
+    if (k.country) subInfo.push(`<span class="country-tag" style="${chipStyle(k.country)}">${flag(k.country)} ${esc(countryName(k.country) || k.country)}</span>`);
+    if (k.quality) subInfo.push(`<span class="quality-tag ${QUALITY_CLS[k.quality] || ''}">${esc(QUALITY[k.quality] || k.quality)}</span>`);
     if (k.subscribers) subInfo.push(`<span class="ch-sub-tag">👥 ${esc(k.subscribers)}</span>`);
     return `<tr>
-      <td><span class="cat-tag">${esc(k.category || '—')}</span></td>
+      <td>${k.category ? `<span class="cat-tag" style="${chipStyle(k.category)}">${esc(k.category)}</span>` : '<span class="muted">—</span>'}</td>
       <td><div class="cell-channel">${thumb}<div>
         <a href="${esc(k.url)}" target="_blank" rel="noopener" title="Mở kênh">${esc(k.channel_name)}</a>
         <div class="cell-sub">${subInfo.join(' ')}</div>
@@ -438,7 +442,7 @@ function keyDetail(k) {
       ${k.thumbnail ? `<img src="${esc(k.thumbnail)}" class="ch-avatar" onerror="this.style.display='none'">` : ''}
       <div>
         <div class="ch-name">${esc(k.channel_name)}</div>
-        <div class="cell-sub">${k.category ? '<span class="cat-tag">' + esc(k.category) + '</span> ' : ''}<span class="badge ${k.status}">${st.icon} ${st.label}</span> ${k.quality ? '<span class="quality-tag">' + esc(QUALITY[k.quality] || k.quality) + '</span>' : ''}</div>
+        <div class="cell-sub">${k.category ? `<span class="cat-tag" style="${chipStyle(k.category)}">${esc(k.category)}</span> ` : ''}${k.country ? `<span class="country-tag" style="${chipStyle(k.country)}">${flag(k.country)} ${esc(countryName(k.country) || k.country)}</span> ` : ''}<span class="badge ${k.status}">${st.icon} ${st.label}</span> ${k.quality ? `<span class="quality-tag ${QUALITY_CLS[k.quality] || ''}">${esc(QUALITY[k.quality] || k.quality)}</span>` : ''}</div>
       </div>
     </div>
     ${channelSummaryHtml(k)}
@@ -581,8 +585,8 @@ async function renderTiktok() {
   $('#topbar-right').innerHTML = '';
   const expBtn = el('<button class="btn btn-ghost">⬇️ Xuất CSV</button>');
   expBtn.onclick = () => exportCsv('kenh-tiktok.csv',
-    ['Tên', 'TikTok ID', 'Link', 'Quốc gia', 'Follow', 'Tym', 'Video', 'Tổng view', 'Kiếm tiền', 'Paypal', 'XMDT', 'Trạng thái', 'Key nguồn', 'Giao cho'],
-    tiktokCache.map((t) => [t.name, t.tiktok_id || '', t.url, t.country || '', t.followers, t.likes, t.video_count, t.total_views || '', t.monetized ? 'Có' : 'Chưa', t.paypal_added ? 'Có' : 'Chưa', t.verified ? 'Có' : 'Chưa', (TT_STATUS[t.status] || {}).label || t.status, t.source_key_name || '', t.assigned_name || '']));
+    ['Tên', 'TikTok ID', 'Link', 'Quốc gia', 'Follow', 'Tym', 'Video', 'Kiếm tiền', 'Paypal', 'XMDT', 'Trạng thái', 'Key nguồn', 'Giao cho'],
+    tiktokCache.map((t) => [t.name, t.tiktok_id || '', t.url, t.country || '', t.followers, t.likes, t.video_count, t.monetized ? 'Có' : 'Chưa', t.paypal_added ? 'Có' : 'Chưa', t.verified ? 'Có' : 'Chưa', (TT_STATUS[t.status] || {}).label || t.status, t.source_key_name || '', t.assigned_name || '']));
   const addBtn = el('<button class="btn btn-primary">➕ Thêm kênh TikTok</button>');
   addBtn.onclick = () => tiktokForm();
   if (State.user.role === 'admin') {
@@ -617,11 +621,9 @@ function drawTiktok() {
   }
   if (ttPerson) list = list.filter((t) => String(t.assigned_to) === String(ttPerson));
   if (ttSort === 'follow') list.sort((a, b) => b.followers - a.followers);
-  else if (ttSort === 'view') list.sort((a, b) => (b.total_views || 0) - (a.total_views || 0));
   else if (ttSort === 'likes') list.sort((a, b) => b.likes - a.likes);
+  else if (ttSort === 'video') list.sort((a, b) => b.video_count - a.video_count);
 
-  const totalFollow = tiktokCache.reduce((a, b) => a + b.followers, 0);
-  const totalLikes = tiktokCache.reduce((a, b) => a + b.likes, 0);
   const personOptions = State.users.map((u) => `<option value="${u.id}" ${String(ttPerson) === String(u.id) ? 'selected' : ''}>${esc(u.name)}</option>`).join('');
   const countryName = (cc) => { const f = REWARD_COUNTRIES.find(([c]) => c === cc); return f ? f[1] : (cc || 'Chưa đặt nước'); };
 
@@ -681,7 +683,7 @@ function drawTiktok() {
       <select id="tt-sort">
         <option value="recent" ${ttSort === 'recent' ? 'selected' : ''}>↕ Mới thêm</option>
         <option value="follow" ${ttSort === 'follow' ? 'selected' : ''}>👥 Follow cao nhất</option>
-        <option value="view" ${ttSort === 'view' ? 'selected' : ''}>▶️ View cao nhất</option>
+        <option value="video" ${ttSort === 'video' ? 'selected' : ''}>🎬 Video nhiều nhất</option>
         <option value="likes" ${ttSort === 'likes' ? 'selected' : ''}>❤️ Tym cao nhất</option>
       </select>
       ${isAdmin ? `<select id="tt-person"><option value="">👥 Tất cả người</option>${personOptions}</select>` : ''}
@@ -839,7 +841,6 @@ function tiktokDetail(t) {
       <div class="tt-stat"><div class="tt-stat-val text-accent">${fmtCompact(t.followers)}</div><div class="tt-stat-lbl">Follow</div></div>
       <div class="tt-stat"><div class="tt-stat-val text-danger">${fmtCompact(t.likes)}</div><div class="tt-stat-lbl">Tym</div></div>
       <div class="tt-stat"><div class="tt-stat-val">${fmtNum(t.video_count)}</div><div class="tt-stat-lbl">Video</div></div>
-      <div class="tt-stat"><div class="tt-stat-val">${t.total_views ? fmtCompact(t.total_views) : '—'}</div><div class="tt-stat-lbl">Tổng view</div></div>
     </div>
     ${t.bio ? `<div class="ch-desc">${esc(t.bio)}</div>` : ''}
     <div style="margin-top:12px">${monetizeChips(t)}</div>
