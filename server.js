@@ -1061,20 +1061,20 @@ app.get('/api/stats', auth, (req, res) => {
   const tt = db.prepare(`SELECT COUNT(*) c, COALESCE(SUM(followers),0) f, COALESCE(SUM(likes),0) l, COALESCE(SUM(video_count),0) v, COALESCE(SUM(total_views),0) views FROM tiktok_channels${ttScope}`).get();
   const tiktok = { channels: tt.c, followers: tt.f, likes: tt.l, videos: tt.v, views: tt.views };
 
-  // Kênh TikTok gom theo từng nhân viên (theo thứ tự thêm)
+  // Kênh TikTok gom theo từng nhân viên — chỉ TÓM TẮT + 3 kênh nổi bật (để Tổng quan luôn gọn dù có 1000 kênh)
   const chans = db.prepare(`
-    SELECT t.id, t.name, t.followers, t.likes, t.video_count, t.total_views, t.country, t.status,
+    SELECT t.id, t.name, t.followers, t.likes, t.video_count, t.country, t.status, t.assigned_to AS owner_id,
            COALESCE(u.name,'(chưa giao)') AS owner
     FROM tiktok_channels t LEFT JOIN users u ON u.id = t.assigned_to
     WHERE t.deleted_at IS NULL ${isAdmin ? '' : `AND (t.assigned_to = ${me} OR t.added_by = ${me})`}
-    ORDER BY t.created_at ASC`).all();
+    ORDER BY t.followers DESC`).all();
   const map = {};
   chans.forEach((c) => {
-    if (!map[c.owner]) map[c.owner] = { owner: c.owner, channelCount: 0, followers: 0, likes: 0, channels: [] };
-    map[c.owner].channelCount++;
-    map[c.owner].followers += c.followers;
-    map[c.owner].likes += c.likes;
-    map[c.owner].channels.push(c);
+    const key = c.owner;
+    if (!map[key]) map[key] = { owner: c.owner, ownerId: c.owner_id || null, channelCount: 0, followers: 0, likes: 0, videos: 0, top: [] };
+    const m = map[key];
+    m.channelCount++; m.followers += c.followers; m.likes += c.likes; m.videos += c.video_count;
+    if (m.top.length < 3) m.top.push({ id: c.id, name: c.name, country: c.country, followers: c.followers, status: c.status });
   });
   const tiktokByUser = Object.values(map).sort((a, b) => b.followers - a.followers);
 

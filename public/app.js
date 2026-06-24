@@ -310,18 +310,23 @@ function drawDashboard() {
     ${unassigned.length > UA_CAP ? `<div class="hint">Hiển thị ${UA_CAP} key đầu. <a class="btn-link" data-go="keys-unassigned">Xem tất cả ${unassigned.length} key chưa làm →</a></div>` : ''}`
     : '<div class="empty" style="padding:30px 10px">Mọi key đều đã có người làm 👍</div>';
 
+  // Tóm tắt mỗi nhân viên: số kênh + tổng số liệu + 3 kênh nổi bật + nút mở danh sách đầy đủ
   const byUser = s.tiktokByUser || [];
-  const byUserHtml = byUser.length ? byUser.map((u) => `
-    <div class="user-channels">
-      <div class="uc-head"><span class="uc-name">👤 ${esc(u.owner)}</span><span class="uc-meta">${u.channelCount} kênh • ${fmtCompact(u.followers)} 👥 • ${fmtCompact(u.likes)} ❤️</span></div>
-      ${u.channels.map((c, i) => `
-        <div class="uc-item" data-ttgo="${c.id}" title="Xem chi tiết">
-          <span class="uc-num">${i + 1}</span>
+  const byUserHtml = byUser.length ? `<div class="user-grid">${byUser.map((u) => `
+    <div class="user-card">
+      <div class="uc-head">
+        <span class="uc-name">👤 ${esc(u.owner)}</span>
+        <span class="uc-count">${u.channelCount} kênh</span>
+      </div>
+      <div class="uc-stats">👥 ${fmtCompact(u.followers)} &nbsp;•&nbsp; ❤️ ${fmtCompact(u.likes)} &nbsp;•&nbsp; 🎬 ${fmtCompact(u.videos)}</div>
+      <div class="uc-top">
+        ${(u.top || []).map((c) => `<div class="uc-item" data-ttgo="${c.id}" title="Xem chi tiết">
           <span class="uc-cn">${esc(c.name)} ${flag(c.country)}</span>
           <span class="uc-stat">${fmtCompact(c.followers)} 👥</span>
-          <span class="badge ${(TT_STATUS[c.status] || TT_STATUS.active).cls}">${(TT_STATUS[c.status] || TT_STATUS.active).label}</span>
         </div>`).join('')}
-    </div>`).join('') : '<div class="empty">Chưa có kênh TikTok nào.</div>';
+      </div>
+      ${u.channelCount > (u.top || []).length ? `<a class="btn-link uc-more" data-ttuser="${u.ownerId ?? ''}">Xem tất cả ${u.channelCount} kênh →</a>` : ''}
+    </div>`).join('')}</div>` : '<div class="empty">Chưa có kênh TikTok nào.</div>';
 
   view.innerHTML = `
     <div class="kpi-grid">${kpis}</div>
@@ -358,6 +363,10 @@ function drawDashboard() {
   view.querySelectorAll('[data-keygo]').forEach((b) => b.onclick = () => { const k = keysCache.find((x) => x.id == b.dataset.keygo); if (k) keyDetail(k); });
   view.querySelectorAll('[data-ttgo]').forEach((b) => b.onclick = async () => {
     try { if (!tiktokCache.length) tiktokCache = await api('/tiktok'); const t = tiktokCache.find((x) => x.id == b.dataset.ttgo); if (t) tiktokDetail(t); } catch (_) {}
+  });
+  // Mở trang Kênh TikTok đã lọc sẵn theo nhân viên
+  view.querySelectorAll('[data-ttuser]').forEach((b) => b.onclick = () => {
+    ttPerson = b.dataset.ttuser || ''; ttSearch = ''; ttCountry = 'all'; navigate('tiktok');
   });
   view.querySelectorAll('[data-claim]').forEach((b) => b.onclick = () => dashClaim(b.dataset.claim, false));
   view.querySelectorAll('[data-dashrelease]').forEach((b) => b.onclick = () => dashClaim(b.dataset.dashrelease, true));
