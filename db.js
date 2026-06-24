@@ -138,6 +138,20 @@ CREATE TABLE IF NOT EXISTS activity_log (
 );
 CREATE INDEX IF NOT EXISTS idx_activity_date ON activity_log(created_at);
 
+-- Báo cáo công việc hằng ngày của từng người: số video, số kênh làm, số key đã test
+CREATE TABLE IF NOT EXISTS daily_reports (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL,
+  report_date TEXT NOT NULL,                      -- 'YYYY-MM-DD' (giờ Việt Nam)
+  videos      INTEGER NOT NULL DEFAULT 0,
+  channels    INTEGER NOT NULL DEFAULT 0,
+  keys        INTEGER NOT NULL DEFAULT 0,
+  updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (user_id, report_date),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_dailyrep_date ON daily_reports(report_date);
+
 CREATE INDEX IF NOT EXISTS idx_videologs_date ON video_logs(log_date);
 CREATE INDEX IF NOT EXISTS idx_videologs_user ON video_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_keys_status ON keys(status);

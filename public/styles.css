@@ -353,7 +353,18 @@ td.stt { color: var(--text-dim); font-weight: 700; text-align: center; width: 36
 .qr-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
 .qr-label { font-size: 14px; color: var(--text); }
 .qr-row input { width: 110px; font-size: 18px; font-weight: 800; text-align: center; padding: 8px 10px; }
-.qr-saved { font-size: 13px; font-weight: 700; color: var(--accent); }
+.qr-saved { font-size: 13px; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
+/* 3 ô nhập nhanh: video / kênh / key + nút lưu — tự xếp gọn trên điện thoại */
+.qr-grid { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.qr-field { display: flex; flex-direction: column; gap: 5px; }
+.qr-field span { font-size: 13px; font-weight: 600; color: var(--text-dim); }
+.qr-field input { width: 140px; font-size: 20px; font-weight: 800; text-align: center; padding: 9px 10px; }
+.qr-grid .btn { height: 42px; }
+@media (max-width: 640px) {
+  .qr-field { flex: 1; min-width: 90px; }
+  .qr-field input { width: 100%; }
+  .qr-grid .btn { width: 100%; }
+}
 
 /* ============ TĂNG TRƯỞNG (mũi tên ↑↓) ============ */
 .delta { display: inline-block; margin-left: 6px; font-size: 11px; font-weight: 800; padding: 1px 6px; border-radius: 6px; white-space: nowrap; vertical-align: middle; }

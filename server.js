@@ -830,69 +830,100 @@ app.get('/api/report/videos', auth, (req, res) => {
   res.json({ rows, totalVideos });
 });
 
-// Báo cáo công việc: trong khoảng ngày, mỗi người làm bao nhiêu VIDEO, thêm bao nhiêu KÊNH, bao nhiêu KEY
-// Ngày tính theo giờ Việt Nam (+7) để khớp với cảm nhận "hôm nay" của team.
-app.get('/api/report/work', auth, (req, res) => {
-  const { from, to } = req.query;
-  const isAdmin = req.user.role === 'admin';
-  const me = req.user.id;
-
-  // 1) Video (theo video_logs.log_date — ngày do nhân viên nhập)
-  const vp = []; let vWhere = 'WHERE 1=1';
-  if (from) { vWhere += ' AND v.log_date >= ?'; vp.push(from); }
-  if (to) { vWhere += ' AND v.log_date <= ?'; vp.push(to); }
-  if (!isAdmin) { vWhere += ' AND v.user_id = ?'; vp.push(me); }
-  const videoRows = db.prepare(`SELECT v.user_id id, COALESCE(SUM(v.count),0) videos, COUNT(v.id) logs FROM video_logs v ${vWhere} GROUP BY v.user_id`).all(...vp);
-
-  // 2) Kênh TikTok thêm mới (theo người thêm, ngày tạo giờ VN)
-  const cp = []; let cWhere = 'WHERE deleted_at IS NULL';
-  if (from) { cWhere += " AND date(created_at,'+7 hours') >= ?"; cp.push(from); }
-  if (to) { cWhere += " AND date(created_at,'+7 hours') <= ?"; cp.push(to); }
-  if (!isAdmin) { cWhere += ' AND added_by = ?'; cp.push(me); }
-  const chanRows = db.prepare(`SELECT added_by id, COUNT(*) channels FROM tiktok_channels ${cWhere} GROUP BY added_by`).all(...cp);
-
-  // 3) Key YouTube thêm mới (theo người thêm, ngày tạo giờ VN)
-  const kp = []; let kWhere = 'WHERE deleted_at IS NULL';
-  if (from) { kWhere += " AND date(created_at,'+7 hours') >= ?"; kp.push(from); }
-  if (to) { kWhere += " AND date(created_at,'+7 hours') <= ?"; kp.push(to); }
-  if (!isAdmin) { kWhere += ' AND added_by = ?'; kp.push(me); }
-  const keyRows = db.prepare(`SELECT added_by id, COUNT(*) keys FROM keys ${kWhere} GROUP BY added_by`).all(...kp);
-
-  // Gộp theo người
-  const byId = {};
-  const ensure = (id) => { if (!byId[id]) byId[id] = { id, name: '', videos: 0, channels: 0, keys: 0, logs: 0 }; return byId[id]; };
-  videoRows.forEach((r) => { const u = ensure(r.id); u.videos = r.videos; u.logs = r.logs; });
-  chanRows.forEach((r) => { if (r.id != null) { ensure(r.id).channels = r.channels; } });
-  keyRows.forEach((r) => { if (r.id != null) { ensure(r.id).keys = r.keys; } });
-  // Gắn tên
-  const names = {};
-  db.prepare('SELECT id, name FROM users').all().forEach((u) => { names[u.id] = u.name; });
-  let perUser = Object.values(byId).filter((u) => u.videos || u.channels || u.keys);
-  perUser.forEach((u) => { u.name = names[u.id] || '(đã xóa)'; });
-  perUser.sort((a, b) => (b.videos - a.videos) || (b.channels - a.channels) || (b.keys - a.keys));
-  const totals = perUser.reduce((a, u) => ({ videos: a.videos + u.videos, channels: a.channels + u.channels, keys: a.keys + u.keys }), { videos: 0, channels: 0, keys: 0 });
-  res.json({ from: from || null, to: to || null, perUser, totals });
-});
-
 // Ngày hôm nay theo giờ Việt Nam (server chạy giờ UTC)
 function vnToday() { return new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10); }
 const isYmd = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
 
-// BÁO CÁO NHANH: nhân viên chỉ cần nhập "hôm nay làm bao nhiêu video"
-// Mỗi người mỗi ngày 1 dòng tổng (note='daily') — nhập lại là cập nhật, không cộng dồn.
-app.get('/api/report/today', auth, (req, res) => {
-  const date = isYmd(req.query.date) ? req.query.date : vnToday();
-  const row = db.prepare("SELECT count FROM video_logs WHERE user_id=? AND log_date=? AND key_id IS NULL AND note='daily'").get(req.user.id, date);
-  res.json({ date, count: row ? row.count : 0 });
+// Tăng trưởng TikTok trong ngày (so với mốc gần nhất của hôm trước), theo phạm vi quyền
+function tiktokGrowth(req) {
+  const me = req.user.id;
+  const scope = req.user.role === 'admin' ? '' : ` AND (t.assigned_to=${me} OR t.added_by=${me})`;
+  const g = db.prepare(`
+    SELECT COALESCE(SUM(t.followers - p.followers),0) AS dfollow,
+           COALESCE(SUM(t.video_count - p.videos),0) AS dvideo,
+           COUNT(*) AS n
+    FROM tiktok_channels t
+    JOIN (
+      SELECT s.channel_id, s.followers, s.video_count AS videos
+      FROM tiktok_snapshots s
+      JOIN (SELECT channel_id, MAX(snap_date) md FROM tiktok_snapshots
+            WHERE snap_date < date('now','+7 hours') GROUP BY channel_id) x
+        ON x.channel_id = s.channel_id AND x.md = s.snap_date
+    ) p ON p.channel_id = t.id
+    WHERE t.deleted_at IS NULL${scope}`).get();
+  return { followers: g.dfollow, videos: g.dvideo, hasData: g.n > 0 };
+}
+
+// Báo cáo công việc: tổng VIDEO / KÊNH / KEY mỗi người TỰ BÁO CÁO trong khoảng ngày
+app.get('/api/report/work', auth, (req, res) => {
+  const { from, to } = req.query;
+  const isAdmin = req.user.role === 'admin';
+  const p = []; let where = 'WHERE 1=1';
+  if (isYmd(from)) { where += ' AND d.report_date >= ?'; p.push(from); }
+  if (isYmd(to)) { where += ' AND d.report_date <= ?'; p.push(to); }
+  if (!isAdmin) { where += ' AND d.user_id = ?'; p.push(req.user.id); }
+  const perUser = db.prepare(`
+    SELECT u.id, u.name,
+      COALESCE(SUM(d.videos),0) videos,
+      COALESCE(SUM(d.channels),0) channels,
+      COALESCE(SUM(d.keys),0) keys
+    FROM daily_reports d JOIN users u ON u.id = d.user_id
+    ${where}
+    GROUP BY u.id HAVING videos>0 OR channels>0 OR keys>0
+    ORDER BY videos DESC, channels DESC, keys DESC`).all(...p);
+  const totals = perUser.reduce((a, u) => ({ videos: a.videos + u.videos, channels: a.channels + u.channels, keys: a.keys + u.keys }), { videos: 0, channels: 0, keys: 0 });
+  res.json({ from: from || null, to: to || null, perUser, totals, growth: tiktokGrowth(req) });
 });
 
+// Danh sách chi tiết các ngày đã báo cáo (để xem/sửa/xóa)
+app.get('/api/report/list', auth, (req, res) => {
+  const { from, to } = req.query;
+  const isAdmin = req.user.role === 'admin';
+  const p = []; let where = 'WHERE 1=1';
+  if (isYmd(from)) { where += ' AND d.report_date >= ?'; p.push(from); }
+  if (isYmd(to)) { where += ' AND d.report_date <= ?'; p.push(to); }
+  if (!isAdmin) { where += ' AND d.user_id = ?'; p.push(req.user.id); }
+  res.json(db.prepare(`SELECT d.*, u.name AS user_name FROM daily_reports d JOIN users u ON u.id = d.user_id ${where} ORDER BY d.report_date DESC, u.name ASC`).all(...p));
+});
+
+// BÁO CÁO NHANH HÔM NAY: đọc số video/kênh/key đã báo cáo của chính mình
+app.get('/api/report/today', auth, (req, res) => {
+  const date = isYmd(req.query.date) ? req.query.date : vnToday();
+  const r = db.prepare('SELECT videos, channels, keys FROM daily_reports WHERE user_id=? AND report_date=?').get(req.user.id, date);
+  res.json({ date, videos: r ? r.videos : 0, channels: r ? r.channels : 0, keys: r ? r.keys : 0 });
+});
+
+// Lưu báo cáo nhanh hôm nay (nhập lại là cập nhật, không cộng dồn)
 app.post('/api/report/today', auth, (req, res) => {
-  const date = isYmd(req.body && req.body.date) ? req.body.date : vnToday();
-  const count = Math.max(0, Math.floor(Number(req.body && req.body.count) || 0));
-  const existing = db.prepare("SELECT id FROM video_logs WHERE user_id=? AND log_date=? AND key_id IS NULL AND note='daily'").get(req.user.id, date);
-  if (existing) db.prepare('UPDATE video_logs SET count=? WHERE id=?').run(count, existing.id);
-  else db.prepare("INSERT INTO video_logs (user_id, log_date, count, note) VALUES (?,?,?, 'daily')").run(req.user.id, date, count);
-  res.json({ ok: true, date, count });
+  const b = req.body || {};
+  const date = isYmd(b.date) ? b.date : vnToday();
+  const videos = Math.max(0, Math.floor(Number(b.videos) || 0));
+  const channels = Math.max(0, Math.floor(Number(b.channels) || 0));
+  const keys = Math.max(0, Math.floor(Number(b.keys) || 0));
+  db.prepare(`INSERT INTO daily_reports (user_id, report_date, videos, channels, keys, updated_at)
+    VALUES (?,?,?,?,?, datetime('now'))
+    ON CONFLICT(user_id, report_date) DO UPDATE SET videos=excluded.videos, channels=excluded.channels, keys=excluded.keys, updated_at=datetime('now')`)
+    .run(req.user.id, date, videos, channels, keys);
+  res.json({ ok: true, date, videos, channels, keys });
+});
+
+// Sửa / xóa 1 dòng báo cáo ngày (chính mình; admin sửa được mọi người)
+app.put('/api/report/:id', auth, (req, res) => {
+  const row = db.prepare('SELECT * FROM daily_reports WHERE id=?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Không tìm thấy' });
+  if (req.user.role !== 'admin' && row.user_id !== req.user.id) return res.status(403).json({ error: 'Không có quyền' });
+  const b = req.body || {};
+  db.prepare("UPDATE daily_reports SET videos=?, channels=?, keys=?, updated_at=datetime('now') WHERE id=?")
+    .run(Math.max(0, Math.floor(Number(b.videos) || 0)), Math.max(0, Math.floor(Number(b.channels) || 0)), Math.max(0, Math.floor(Number(b.keys) || 0)), row.id);
+  res.json({ ok: true });
+});
+
+app.delete('/api/report/:id', auth, (req, res) => {
+  const row = db.prepare('SELECT * FROM daily_reports WHERE id=?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Không tìm thấy' });
+  if (req.user.role !== 'admin' && row.user_id !== req.user.id) return res.status(403).json({ error: 'Không có quyền' });
+  db.prepare('DELETE FROM daily_reports WHERE id=?').run(row.id);
+  res.json({ ok: true });
 });
 
 app.post('/api/videologs', auth, (req, res) => {

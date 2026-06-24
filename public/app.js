@@ -1294,10 +1294,7 @@ function reportRange() {
 async function renderVideos() {
   $('#topbar-right').innerHTML = '';
   const expBtn = el('<button class="btn btn-ghost">⬇️ Xuất CSV</button>');
-  const addBtn = el('<button class="btn btn-ghost" title="Ghi video gắn với 1 key cụ thể (không bắt buộc)">➕ Ghi theo key</button>');
-  addBtn.onclick = () => videoForm();
   $('#topbar-right').appendChild(expBtn);
-  $('#topbar-right').appendChild(addBtn);
 
   const [from, to] = reportRange();
   const today = localDate();
@@ -1306,26 +1303,27 @@ async function renderVideos() {
   if (reportLast) drawReport(reportLast, expBtn);
   else view.innerHTML = '<div class="loading">Đang tải báo cáo…</div>';
   try {
-    const [work, logs, myToday] = await Promise.all([
+    const [work, list, my] = await Promise.all([
       api(`/report/work?from=${from}&to=${to}`),
-      api(`/videologs?from=${from}&to=${to}`),
+      api(`/report/list?from=${from}&to=${to}`),
       api(`/report/today?date=${today}`),
     ]);
-    reportLast = { work, logs, from, to, today, myToday: myToday.count };
+    reportLast = { work, list, from, to, today, my };
     if (State.page === 'videos') drawReport(reportLast, expBtn);
   } catch (e) { if (!reportLast) view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 }
 
 function drawReport(data, expBtn) {
-  const { work, logs, from, to } = data;
+  const { work, list, from, to } = data;
   const today = data.today || localDate();
-  const myToday = data.myToday || 0;
+  const my = data.my || { videos: 0, channels: 0, keys: 0 };
   const view = $('#view');
   const isAdmin = State.user.role === 'admin';
   const t = work.totals || { videos: 0, channels: 0, keys: 0 };
+  const g = work.growth || { followers: 0, videos: 0, hasData: false };
 
   if (expBtn) expBtn.onclick = () => exportCsv('bao-cao-cong-viec.csv',
-    ['Nhân viên', 'Video', 'Kênh mới', 'Key mới'],
+    ['Nhân viên', 'Video', 'Kênh', 'Key đã test'],
     work.perUser.map((r) => [r.name, r.videos, r.channels, r.keys]));
 
   const periods = [['today', '📅 Hôm nay'], ['week', '🗓️ Tuần này'], ['month', '📆 Tháng này'], ['custom', '⚙️ Tùy chọn']];
@@ -1338,33 +1336,40 @@ function drawReport(data, expBtn) {
     <td><b class="text-accent" style="font-size:16px">${fmtNum(r.videos)}</b></td>
     <td><b>${fmtNum(r.channels)}</b></td>
     <td><b>${fmtNum(r.keys)}</b></td>
-  </tr>`).join('') : `<tr><td colspan="5"><div class="empty" style="padding:24px">Chưa có hoạt động nào trong kỳ này.</div></td></tr>`;
+  </tr>`).join('') : `<tr><td colspan="5"><div class="empty" style="padding:24px">Chưa ai báo cáo trong kỳ này.</div></td></tr>`;
 
-  const logRows = logs.map((v) => `<tr>
-    <td class="nowrap">${fmtDate(v.log_date)}</td>
-    ${isAdmin ? `<td>${esc(v.user_name)}</td>` : ''}
-    <td><b class="text-accent">${fmtNum(v.count)}</b></td>
-    <td>${v.key_name ? esc(v.key_name) : '<span class="muted">—</span>'}</td>
-    <td class="cell-sub">${v.note === 'daily' ? '<span class="muted">báo cáo nhanh trong ngày</span>' : esc(v.note || '')}</td>
+  const detailRows = list.map((d) => `<tr>
+    <td class="nowrap">${fmtDate(d.report_date)}</td>
+    ${isAdmin ? `<td>${esc(d.user_name)}</td>` : ''}
+    <td><b class="text-accent">${fmtNum(d.videos)}</b></td>
+    <td>${fmtNum(d.channels)}</td>
+    <td>${fmtNum(d.keys)}</td>
     <td><div class="row-actions">
-      <button class="btn-icon" data-vedit="${v.id}">✏️</button>
-      <button class="btn-icon" data-vdel="${v.id}">🗑️</button>
+      <button class="btn-icon" data-redit="${d.id}">✏️</button>
+      <button class="btn-icon" data-rdel="${d.id}">🗑️</button>
     </div></td>
   </tr>`).join('');
 
   const rangeLabel = from === to ? fmtDate(from) : `${fmtDate(from)} → ${fmtDate(to)}`;
+  const hasMy = my.videos || my.channels || my.keys;
+  // Thẻ tăng trưởng TikTok (đưa ngay vào báo cáo)
+  const growthCard = `<div class="kpi ${g.followers >= 0 ? 'primary' : 'danger'}">
+    <div class="kpi-icon">📈</div><div class="kpi-label">Follow tăng/giảm hôm nay</div>
+    <div class="kpi-value">${g.hasData ? (g.followers >= 0 ? '+' : '−') + fmtCompact(Math.abs(g.followers)) : '—'}</div>
+    <div class="kpi-sub">${g.hasData ? (g.videos >= 0 ? '+' : '') + fmtNum(g.videos) + ' video mới hôm nay' : 'cần ≥1 ngày dữ liệu'}</div>
+  </div>`;
 
   view.innerHTML = `
     <div class="panel quick-report">
       <div class="qr-title">📝 Báo cáo nhanh hôm nay <span class="qr-date">${fmtDate(today)}</span></div>
-      <div class="qr-row">
-        <span class="qr-label">Hôm nay bạn làm được</span>
-        <input type="number" id="qr-count" min="0" value="${myToday}" inputmode="numeric">
-        <span class="qr-label">video</span>
+      <div class="qr-grid">
+        <label class="qr-field"><span>🎬 Video đã làm</span><input type="number" id="qr-videos" min="0" value="${my.videos}" inputmode="numeric"></label>
+        <label class="qr-field"><span>📱 Kênh đã làm</span><input type="number" id="qr-channels" min="0" value="${my.channels}" inputmode="numeric"></label>
+        <label class="qr-field"><span>🔑 Key đã test</span><input type="number" id="qr-keys" min="0" value="${my.keys}" inputmode="numeric"></label>
         <button class="btn btn-primary" id="qr-save">💾 Lưu báo cáo</button>
-        ${myToday ? `<span class="qr-saved">✓ đã ghi ${fmtNum(myToday)} video</span>` : ''}
       </div>
-      <div class="hint">Chỉ cần gõ số rồi bấm Lưu. Mỗi ngày 1 lần — muốn sửa thì gõ số mới rồi Lưu lại (không bị cộng dồn).</div>
+      ${hasMy ? `<div class="qr-saved">✓ đã ghi hôm nay: ${fmtNum(my.videos)} video · ${fmtNum(my.channels)} kênh · ${fmtNum(my.keys)} key</div>` : ''}
+      <div class="hint">Cuối ngày gõ 3 số rồi bấm Lưu. Muốn sửa thì gõ lại số mới rồi Lưu (không bị cộng dồn).</div>
     </div>
     <div class="filter-tabs">${tabsHtml}</div>
     ${reportPeriod === 'custom' ? `<div class="toolbar">
@@ -1372,85 +1377,77 @@ function drawReport(data, expBtn) {
       <div><label class="cell-sub">Đến ngày</label><input type="date" id="v-to" value="${to}"></div>
     </div>` : ''}
     <div class="kpi-grid" style="margin-bottom:18px">
-      <div class="kpi accent"><div class="kpi-icon">🎬</div><div class="kpi-label">Video đã làm</div><div class="kpi-value">${fmtNum(t.videos)}</div><div class="kpi-sub">${rangeLabel}</div></div>
-      <div class="kpi primary"><div class="kpi-icon">📱</div><div class="kpi-label">Kênh TikTok mới</div><div class="kpi-value">${fmtNum(t.channels)}</div><div class="kpi-sub">${rangeLabel}</div></div>
-      <div class="kpi info"><div class="kpi-icon">🔑</div><div class="kpi-label">Key mới (đã test/thêm)</div><div class="kpi-value">${fmtNum(t.keys)}</div><div class="kpi-sub">${rangeLabel}</div></div>
+      <div class="kpi accent"><div class="kpi-icon">🎬</div><div class="kpi-label">Tổng video đã làm</div><div class="kpi-value">${fmtNum(t.videos)}</div><div class="kpi-sub">${rangeLabel}</div></div>
+      <div class="kpi info"><div class="kpi-icon">📱</div><div class="kpi-label">Tổng kênh đã làm</div><div class="kpi-value">${fmtNum(t.channels)}</div><div class="kpi-sub">${rangeLabel}</div></div>
+      <div class="kpi"><div class="kpi-icon">🔑</div><div class="kpi-label">Tổng key đã test</div><div class="kpi-value">${fmtNum(t.keys)}</div><div class="kpi-sub">${rangeLabel}</div></div>
+      ${growthCard}
     </div>
     <div class="panel">
       <div class="panel-title">📊 ${isAdmin ? 'Báo cáo theo nhân viên' : 'Kết quả của tôi'} &nbsp;<span class="muted" style="font-weight:400;font-size:13px">${rangeLabel}</span></div>
       <div class="table-wrap"><table>
-        <thead><tr><th>#</th><th>Nhân viên</th><th>🎬 Video</th><th>📱 Kênh mới</th><th>🔑 Key mới</th></tr></thead>
+        <thead><tr><th>#</th><th>Nhân viên</th><th>🎬 Video</th><th>📱 Kênh</th><th>🔑 Key test</th></tr></thead>
         <tbody>${repRows}</tbody></table></div>
     </div>
     <div class="panel">
-      <div class="panel-title">📝 Chi tiết video đã ghi</div>
-      ${logs.length ? `<div class="table-wrap"><table>
-        <thead><tr><th>Ngày</th>${isAdmin ? '<th>Nhân sự</th>' : ''}<th>Số video</th><th>Key</th><th>Ghi chú</th><th></th></tr></thead>
-        <tbody>${logRows}</tbody></table></div>`
-        : '<div class="empty" style="padding:24px">Chưa ghi video nào trong kỳ này. Bấm "➕ Ghi video" để báo cáo.</div>'}
+      <div class="panel-title">📅 Chi tiết theo ngày</div>
+      ${list.length ? `<div class="table-wrap"><table>
+        <thead><tr><th>Ngày</th>${isAdmin ? '<th>Nhân sự</th>' : ''}<th>🎬 Video</th><th>📱 Kênh</th><th>🔑 Key test</th><th></th></tr></thead>
+        <tbody>${detailRows}</tbody></table></div>`
+        : '<div class="empty" style="padding:24px">Chưa có báo cáo nào trong kỳ này.</div>'}
     </div>`;
 
-  // Lưu báo cáo nhanh hôm nay
-  const qrSave = $('#qr-save'), qrCount = $('#qr-count');
+  // Lưu báo cáo nhanh hôm nay (3 số)
+  const qrSave = $('#qr-save');
   if (qrSave) {
     const doSave = async () => {
       const unlock = lockBtn(qrSave);
       try {
-        const r = await api('/report/today', { method: 'POST', body: { date: today, count: Number(qrCount.value) || 0 } });
-        if (reportLast) reportLast.myToday = r.count;
-        toast(`✓ Đã lưu: hôm nay ${fmtNum(r.count)} video`);
+        const body = {
+          date: today,
+          videos: Number($('#qr-videos').value) || 0,
+          channels: Number($('#qr-channels').value) || 0,
+          keys: Number($('#qr-keys').value) || 0,
+        };
+        const r = await api('/report/today', { method: 'POST', body });
+        if (reportLast) reportLast.my = { videos: r.videos, channels: r.channels, keys: r.keys };
+        toast(`✓ Đã lưu báo cáo hôm nay: ${fmtNum(r.videos)} video · ${fmtNum(r.channels)} kênh · ${fmtNum(r.keys)} key`);
         renderVideos();
       } catch (e) { toast(e.message, 'err'); } finally { unlock(); }
     };
     qrSave.onclick = doSave;
-    qrCount.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); doSave(); } };
+    ['#qr-videos', '#qr-channels', '#qr-keys'].forEach((s) => { const el2 = $(s); if (el2) el2.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); doSave(); } }; });
   }
   view.querySelectorAll('[data-period]').forEach((tb) => tb.onclick = () => { reportPeriod = tb.dataset.period; renderVideos(); });
   if ($('#v-from')) $('#v-from').onchange = (e) => { videoFrom = e.target.value; renderVideos(); };
   if ($('#v-to')) $('#v-to').onchange = (e) => { videoTo = e.target.value; renderVideos(); };
-  view.querySelectorAll('[data-vedit]').forEach((b) => b.onclick = () => { const v = logs.find((x) => x.id == b.dataset.vedit); videoForm(v); });
-  view.querySelectorAll('[data-vdel]').forEach((b) => b.onclick = () => delVideo(b.dataset.vdel));
+  view.querySelectorAll('[data-redit]').forEach((b) => b.onclick = () => { const d = list.find((x) => x.id == b.dataset.redit); reportEditForm(d); });
+  view.querySelectorAll('[data-rdel]').forEach((b) => b.onclick = () => delReport(b.dataset.rdel));
 }
 
-function videoForm(log = null) {
-  const isEdit = !!log;
-  const isAdmin = State.user.role === 'admin';
-  const userOptions = State.users.map((u) => `<option value="${u.id}" ${log && log.user_id == u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('');
-  const keyOptions = keysCache.length ? keysCache.map((k) => `<option value="${k.id}" ${log && log.key_id == k.id ? 'selected' : ''}>${esc(k.channel_name)}</option>`).join('') : '';
-
+// Sửa 1 dòng báo cáo ngày
+function reportEditForm(d) {
   const form = el(`<form>
+    <div class="form-row"><label>Ngày</label><input value="${fmtDate(d.report_date)}${State.user.role === 'admin' ? ' — ' + esc(d.user_name) : ''}" disabled></div>
     <div class="form-grid">
-      <div class="form-row"><label>Ngày</label><input type="date" id="v-date" value="${log?.log_date?.slice(0,10) || localDate()}"></div>
-      <div class="form-row"><label>Số video</label><input type="number" id="v-count" min="0" value="${log?.count ?? 1}"></div>
+      <div class="form-row"><label>🎬 Video</label><input type="number" id="r-videos" min="0" value="${d.videos}"></div>
+      <div class="form-row"><label>📱 Kênh</label><input type="number" id="r-channels" min="0" value="${d.channels}"></div>
     </div>
-    ${isAdmin ? `<div class="form-row"><label>Nhân sự</label><select id="v-user">${userOptions}</select></div>` : ''}
-    <div class="form-row"><label>Key liên quan (tùy chọn)</label><select id="v-key"><option value="">— không gắn key —</option>${keyOptions}</select></div>
-    <div class="form-row"><label>Ghi chú</label><textarea id="v-note" placeholder="Ghi chú…">${esc(log?.note || '')}</textarea></div>
-    <div class="form-actions"><button type="submit" class="btn btn-primary">${isEdit ? 'Lưu' : 'Ghi nhận'}</button></div>
+    <div class="form-row"><label>🔑 Key đã test</label><input type="number" id="r-keys" min="0" value="${d.keys}"></div>
+    <div class="form-actions"><button type="submit" class="btn btn-primary">Lưu thay đổi</button></div>
   </form>`);
-
   form.onsubmit = async (e) => {
     e.preventDefault();
-    const body = {
-      log_date: form.querySelector('#v-date').value,
-      count: form.querySelector('#v-count').value,
-      key_id: form.querySelector('#v-key').value || null,
-      note: form.querySelector('#v-note').value.trim(),
-    };
-    if (isAdmin) body.user_id = form.querySelector('#v-user').value;
+    const body = { videos: Number(form.querySelector('#r-videos').value) || 0, channels: Number(form.querySelector('#r-channels').value) || 0, keys: Number(form.querySelector('#r-keys').value) || 0 };
     const unlock = lockBtn(form);
-    try {
-      if (isEdit) { await api('/videologs/' + log.id, { method: 'PUT', body }); toast('Đã cập nhật'); }
-      else { await api('/videologs', { method: 'POST', body }); toast('Đã ghi nhận video'); }
-      closeModal(); renderVideos();
-    } catch (err) { toast(err.message, 'err'); } finally { unlock(); }
+    try { await api('/report/' + d.id, { method: 'PUT', body }); toast('Đã cập nhật'); closeModal(); renderVideos(); }
+    catch (err) { toast(err.message, 'err'); } finally { unlock(); }
   };
-  openModal(isEdit ? 'Sửa nhật ký' : 'Ghi nhận video', form);
+  openModal('Sửa báo cáo ngày', form);
 }
 
-async function delVideo(id) {
-  if (!confirm('Xóa dòng nhật ký này?')) return;
-  try { await api('/videologs/' + id, { method: 'DELETE' }); toast('Đã xóa'); renderVideos(); }
+async function delReport(id) {
+  if (!confirm('Xóa dòng báo cáo này?')) return;
+  try { await api('/report/' + id, { method: 'DELETE' }); toast('Đã xóa'); renderVideos(); }
   catch (e) { toast(e.message, 'err'); }
 }
 
