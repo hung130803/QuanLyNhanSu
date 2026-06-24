@@ -346,6 +346,26 @@ td.stt { color: var(--text-dim); font-weight: 700; text-align: center; width: 36
 .filter-tab.active { background: var(--primary); border-color: var(--primary); color: #fff; }
 .filter-tab .count { background: rgba(255,255,255,.15); padding: 1px 8px; border-radius: 10px; font-size: 12px; }
 
+/* ============ BÁO CÁO NHANH ============ */
+.quick-report { border: 1.5px solid var(--primary); background: linear-gradient(135deg, #6c5ce714, transparent); }
+.qr-title { font-size: 15px; font-weight: 800; margin-bottom: 12px; }
+.qr-date { font-size: 12px; font-weight: 600; color: var(--text-dim); background: var(--bg-soft); padding: 2px 9px; border-radius: 20px; margin-left: 6px; }
+.qr-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.qr-label { font-size: 14px; color: var(--text); }
+.qr-row input { width: 110px; font-size: 18px; font-weight: 800; text-align: center; padding: 8px 10px; }
+.qr-saved { font-size: 13px; font-weight: 700; color: var(--accent); }
+
+/* ============ TĂNG TRƯỞNG (mũi tên ↑↓) ============ */
+.delta { display: inline-block; margin-left: 6px; font-size: 11px; font-weight: 800; padding: 1px 6px; border-radius: 6px; white-space: nowrap; vertical-align: middle; }
+.delta.up { color: #34d399; background: #10b98122; }
+.delta.down { color: #f87171; background: #ef444422; }
+.delta.flat { color: var(--text-dim); background: var(--bg-soft); }
+.growth-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; padding: 11px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: linear-gradient(90deg, #10b9810f, transparent 70%); }
+.gb-title { font-weight: 800; font-size: 14px; }
+.gb-item { font-size: 13.5px; font-weight: 600; }
+.gb-item .delta { font-size: 12.5px; margin-left: 4px; }
+.gb-hint { font-size: 12px; }
+
 /* ============ PHÂN TRANG ============ */
 .pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 6px 2px; flex-wrap: wrap; }
 .pager-info { font-size: 13px; color: var(--text-dim); }

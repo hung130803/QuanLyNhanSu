@@ -57,6 +57,17 @@ const fmtCompact = (n) => {
   if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
   return String(n);
 };
+// Tính mức tăng/giảm so với mốc hôm trước (prev). Trả về số chênh lệch hoặc null nếu chưa có mốc.
+const deltaOf = (cur, prev) => (prev == null ? null : Number(cur || 0) - Number(prev || 0));
+// Huy hiệu tăng/giảm: ▲ xanh / ▼ đỏ / – không đổi. compact=true để rút gọn (1.2K)
+function deltaBadge(d, compact) {
+  if (d == null) return ''; // chưa có dữ liệu hôm trước để so
+  if (d === 0) return '<span class="delta flat">–</span>';
+  const fmt = compact ? fmtCompact(Math.abs(d)) : fmtNum(Math.abs(d));
+  return d > 0
+    ? `<span class="delta up" title="Tăng so với hôm trước">▲ ${fmt}</span>`
+    : `<span class="delta down" title="Giảm so với hôm trước">▼ ${fmt}</span>`;
+}
 // Cờ quốc gia từ mã 2 chữ (VN -> 🇻🇳)
 const flag = (cc) => {
   if (!cc || cc.length !== 2) return '🌐';
@@ -788,8 +799,9 @@ async function renderTiktok() {
   $('#topbar-right').innerHTML = '';
   const expBtn = el('<button class="btn btn-ghost">⬇️ Xuất CSV</button>');
   expBtn.onclick = () => exportCsv('kenh-tiktok.csv',
-    ['Tên', 'TikTok ID', 'Link', 'Quốc gia', 'Follow', 'Tym', 'Video', 'Kiếm tiền', 'Paypal', 'XMDT', 'Trạng thái', 'Key nguồn', 'Giao cho'],
-    tiktokCache.map((t) => [t.name, t.tiktok_id || '', t.url, t.country || '', t.followers, t.likes, t.video_count, t.monetized ? 'Có' : 'Chưa', t.paypal_added ? 'Có' : 'Chưa', t.verified ? 'Có' : 'Chưa', (TT_STATUS[t.status] || {}).label || t.status, t.source_key_name || '', t.assigned_name || '']));
+    ['Tên', 'TikTok ID', 'Link', 'Quốc gia', 'Follow', 'Follow +/- hôm nay', 'Tym', 'Video', 'Video mới hôm nay', 'Kiếm tiền', 'Paypal', 'XMDT', 'Trạng thái', 'Key nguồn', 'Giao cho'],
+    tiktokCache.map((t) => { const df = deltaOf(t.followers, t.prev_followers), dv = deltaOf(t.video_count, t.prev_videos);
+      return [t.name, t.tiktok_id || '', t.url, t.country || '', t.followers, df == null ? '' : df, t.likes, t.video_count, dv == null ? '' : dv, t.monetized ? 'Có' : 'Chưa', t.paypal_added ? 'Có' : 'Chưa', t.verified ? 'Có' : 'Chưa', (TT_STATUS[t.status] || {}).label || t.status, t.source_key_name || '', t.assigned_name || '']; }));
   const addBtn = el('<button class="btn btn-primary">➕ Thêm kênh</button>');
   addBtn.onclick = () => tiktokForm();
   const delSelBtn = el('<button id="tt-del-sel" class="btn btn-danger" style="display:none">🗑️ Xóa đã chọn (0)</button>');
@@ -859,9 +871,9 @@ function drawTiktok() {
         ${t.note ? `<div class="cell-note">📝 ${esc(t.note)}</div>` : ''}
         ${monetizeChips(t)}
       </div></div></td>
-      <td><b class="text-accent">${fmtCompact(t.followers)}</b></td>
-      <td><b class="text-danger">${fmtCompact(t.likes)}</b></td>
-      <td>${fmtNum(t.video_count)}</td>
+      <td><b class="text-accent">${fmtCompact(t.followers)}</b>${deltaBadge(deltaOf(t.followers, t.prev_followers), true)}</td>
+      <td><b class="text-danger">${fmtCompact(t.likes)}</b>${deltaBadge(deltaOf(t.likes, t.prev_likes), true)}</td>
+      <td>${fmtNum(t.video_count)}${deltaBadge(deltaOf(t.video_count, t.prev_videos), false)}</td>
       <td><span class="badge ${st.cls}">${st.label}</span></td>
       <td class="nowrap cell-sub">${t.source_key_name ? esc(t.source_key_name) : '<span class="muted">—</span>'}</td>
       <td class="nowrap">${t.assigned_name ? esc(t.assigned_name) : '<span class="muted">—</span>'}</td>
@@ -916,6 +928,17 @@ function drawTiktok() {
     ? `<div class="collapse-bar"><button class="btn btn-sm btn-ghost" id="tt-toggle-all">${allCollapsed ? '▾ Mở tất cả nhóm' : '▸ Thu gọn tất cả nhóm'}</button><span class="muted">${list.length} kênh • ${groupKeys.length} nước</span></div>`
     : '';
 
+  // Thanh tóm tắt tăng trưởng trong ngày (so với hôm trước)
+  const anyPrev = list.some((t) => t.prev_followers != null);
+  const sumDF = list.reduce((a, t) => a + (deltaOf(t.followers, t.prev_followers) || 0), 0);
+  const sumDV = list.reduce((a, t) => a + (deltaOf(t.video_count, t.prev_videos) || 0), 0);
+  const growthBar = anyPrev ? `<div class="growth-bar">
+    <span class="gb-title">📈 Hôm nay (so với hôm trước):</span>
+    <span class="gb-item">Follow ${deltaBadge(sumDF, true) || '<span class="delta flat">–</span>'}</span>
+    <span class="gb-item">Video mới ${deltaBadge(sumDV, false) || '<span class="delta flat">–</span>'}</span>
+    <span class="muted gb-hint">Bấm 🔄 "Cập nhật tất cả" mỗi ngày để theo dõi chính xác.</span>
+  </div>` : `<div class="growth-bar"><span class="muted">📈 Bấm 🔄 "Cập nhật tất cả" mỗi ngày để xem kênh tăng/giảm bao nhiêu follow, video mới.</span></div>`;
+
   view.innerHTML = `
     <div class="toolbar">
       <input class="search" id="tt-search" placeholder="🔍 Tìm kênh TikTok…" value="${esc(ttSearch)}">
@@ -932,7 +955,7 @@ function drawTiktok() {
       </select>
       ${isAdmin ? `<select id="tt-person"><option value="">👥 Tất cả người</option>${personOptions}</select>` : ''}
     </div>
-    ${list.length ? collapseBar + groupedHtml
+    ${list.length ? growthBar + collapseBar + groupedHtml
       : '<div class="empty"><div class="empty-icon">📱</div>Chưa có kênh nào khớp bộ lọc.</div>'}`;
 
   const search = $('#tt-search');
@@ -1271,28 +1294,32 @@ function reportRange() {
 async function renderVideos() {
   $('#topbar-right').innerHTML = '';
   const expBtn = el('<button class="btn btn-ghost">⬇️ Xuất CSV</button>');
-  const addBtn = el('<button class="btn btn-primary">➕ Ghi video</button>');
+  const addBtn = el('<button class="btn btn-ghost" title="Ghi video gắn với 1 key cụ thể (không bắt buộc)">➕ Ghi theo key</button>');
   addBtn.onclick = () => videoForm();
   $('#topbar-right').appendChild(expBtn);
   $('#topbar-right').appendChild(addBtn);
 
   const [from, to] = reportRange();
+  const today = localDate();
   const view = $('#view');
   // Có cache thì vẽ ngay
   if (reportLast) drawReport(reportLast, expBtn);
   else view.innerHTML = '<div class="loading">Đang tải báo cáo…</div>';
   try {
-    const [work, logs] = await Promise.all([
+    const [work, logs, myToday] = await Promise.all([
       api(`/report/work?from=${from}&to=${to}`),
       api(`/videologs?from=${from}&to=${to}`),
+      api(`/report/today?date=${today}`),
     ]);
-    reportLast = { work, logs, from, to };
+    reportLast = { work, logs, from, to, today, myToday: myToday.count };
     if (State.page === 'videos') drawReport(reportLast, expBtn);
   } catch (e) { if (!reportLast) view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 }
 
 function drawReport(data, expBtn) {
   const { work, logs, from, to } = data;
+  const today = data.today || localDate();
+  const myToday = data.myToday || 0;
   const view = $('#view');
   const isAdmin = State.user.role === 'admin';
   const t = work.totals || { videos: 0, channels: 0, keys: 0 };
@@ -1318,7 +1345,7 @@ function drawReport(data, expBtn) {
     ${isAdmin ? `<td>${esc(v.user_name)}</td>` : ''}
     <td><b class="text-accent">${fmtNum(v.count)}</b></td>
     <td>${v.key_name ? esc(v.key_name) : '<span class="muted">—</span>'}</td>
-    <td class="cell-sub">${esc(v.note || '')}</td>
+    <td class="cell-sub">${v.note === 'daily' ? '<span class="muted">báo cáo nhanh trong ngày</span>' : esc(v.note || '')}</td>
     <td><div class="row-actions">
       <button class="btn-icon" data-vedit="${v.id}">✏️</button>
       <button class="btn-icon" data-vdel="${v.id}">🗑️</button>
@@ -1328,6 +1355,17 @@ function drawReport(data, expBtn) {
   const rangeLabel = from === to ? fmtDate(from) : `${fmtDate(from)} → ${fmtDate(to)}`;
 
   view.innerHTML = `
+    <div class="panel quick-report">
+      <div class="qr-title">📝 Báo cáo nhanh hôm nay <span class="qr-date">${fmtDate(today)}</span></div>
+      <div class="qr-row">
+        <span class="qr-label">Hôm nay bạn làm được</span>
+        <input type="number" id="qr-count" min="0" value="${myToday}" inputmode="numeric">
+        <span class="qr-label">video</span>
+        <button class="btn btn-primary" id="qr-save">💾 Lưu báo cáo</button>
+        ${myToday ? `<span class="qr-saved">✓ đã ghi ${fmtNum(myToday)} video</span>` : ''}
+      </div>
+      <div class="hint">Chỉ cần gõ số rồi bấm Lưu. Mỗi ngày 1 lần — muốn sửa thì gõ số mới rồi Lưu lại (không bị cộng dồn).</div>
+    </div>
     <div class="filter-tabs">${tabsHtml}</div>
     ${reportPeriod === 'custom' ? `<div class="toolbar">
       <div><label class="cell-sub">Từ ngày</label><input type="date" id="v-from" value="${from}"></div>
@@ -1352,6 +1390,21 @@ function drawReport(data, expBtn) {
         : '<div class="empty" style="padding:24px">Chưa ghi video nào trong kỳ này. Bấm "➕ Ghi video" để báo cáo.</div>'}
     </div>`;
 
+  // Lưu báo cáo nhanh hôm nay
+  const qrSave = $('#qr-save'), qrCount = $('#qr-count');
+  if (qrSave) {
+    const doSave = async () => {
+      const unlock = lockBtn(qrSave);
+      try {
+        const r = await api('/report/today', { method: 'POST', body: { date: today, count: Number(qrCount.value) || 0 } });
+        if (reportLast) reportLast.myToday = r.count;
+        toast(`✓ Đã lưu: hôm nay ${fmtNum(r.count)} video`);
+        renderVideos();
+      } catch (e) { toast(e.message, 'err'); } finally { unlock(); }
+    };
+    qrSave.onclick = doSave;
+    qrCount.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); doSave(); } };
+  }
   view.querySelectorAll('[data-period]').forEach((tb) => tb.onclick = () => { reportPeriod = tb.dataset.period; renderVideos(); });
   if ($('#v-from')) $('#v-from').onchange = (e) => { videoFrom = e.target.value; renderVideos(); };
   if ($('#v-to')) $('#v-to').onchange = (e) => { videoTo = e.target.value; renderVideos(); };

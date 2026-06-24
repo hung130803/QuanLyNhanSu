@@ -533,9 +533,21 @@ const tiktokWithNames = `
   LEFT JOIN keys k ON k.id = t.source_key_id
 `;
 
-// Lưu mốc tăng trưởng (1 mốc/ngày/kênh)
+// Query danh sách kênh KÈM mốc gần nhất của hôm trước (để tính tăng/giảm trong ngày)
+const tiktokListQuery = `
+  SELECT t.*, a.name AS assigned_name, b.name AS added_name, k.channel_name AS source_key_name,
+    (SELECT s.followers   FROM tiktok_snapshots s WHERE s.channel_id=t.id AND s.snap_date < date('now','+7 hours') ORDER BY s.snap_date DESC LIMIT 1) AS prev_followers,
+    (SELECT s.likes       FROM tiktok_snapshots s WHERE s.channel_id=t.id AND s.snap_date < date('now','+7 hours') ORDER BY s.snap_date DESC LIMIT 1) AS prev_likes,
+    (SELECT s.video_count FROM tiktok_snapshots s WHERE s.channel_id=t.id AND s.snap_date < date('now','+7 hours') ORDER BY s.snap_date DESC LIMIT 1) AS prev_videos
+  FROM tiktok_channels t
+  LEFT JOIN users a ON a.id = t.assigned_to
+  LEFT JOIN users b ON b.id = t.added_by
+  LEFT JOIN keys k ON k.id = t.source_key_id
+`;
+
+// Lưu mốc tăng trưởng (1 mốc/ngày/kênh) — theo ngày giờ Việt Nam
 function saveSnapshot(channelId, followers, likes, video_count) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
   const ex = db.prepare('SELECT id FROM tiktok_snapshots WHERE channel_id=? AND snap_date=?').get(channelId, today);
   if (ex) db.prepare('UPDATE tiktok_snapshots SET followers=?, likes=?, video_count=? WHERE id=?').run(followers, likes, video_count, ex.id);
   else db.prepare('INSERT INTO tiktok_snapshots (channel_id, snap_date, followers, likes, video_count) VALUES (?,?,?,?,?)').run(channelId, today, followers, likes, video_count);
@@ -590,9 +602,9 @@ async function runKeyQueue() {
 app.get('/api/tiktok', auth, (req, res) => {
   // Nhân viên chỉ thấy kênh của mình (assigned_to hoặc added_by là mình)
   if (req.user.role !== 'admin') {
-    return res.json(db.prepare(tiktokWithNames + ' WHERE t.deleted_at IS NULL AND (t.assigned_to = ? OR t.added_by = ?) ORDER BY t.created_at DESC').all(req.user.id, req.user.id));
+    return res.json(db.prepare(tiktokListQuery + ' WHERE t.deleted_at IS NULL AND (t.assigned_to = ? OR t.added_by = ?) ORDER BY t.created_at DESC').all(req.user.id, req.user.id));
   }
-  res.json(db.prepare(tiktokWithNames + ' WHERE t.deleted_at IS NULL ORDER BY t.created_at DESC').all());
+  res.json(db.prepare(tiktokListQuery + ' WHERE t.deleted_at IS NULL ORDER BY t.created_at DESC').all());
 });
 
 // Dữ liệu biểu đồ tăng trưởng của 1 kênh
@@ -860,6 +872,27 @@ app.get('/api/report/work', auth, (req, res) => {
   perUser.sort((a, b) => (b.videos - a.videos) || (b.channels - a.channels) || (b.keys - a.keys));
   const totals = perUser.reduce((a, u) => ({ videos: a.videos + u.videos, channels: a.channels + u.channels, keys: a.keys + u.keys }), { videos: 0, channels: 0, keys: 0 });
   res.json({ from: from || null, to: to || null, perUser, totals });
+});
+
+// Ngày hôm nay theo giờ Việt Nam (server chạy giờ UTC)
+function vnToday() { return new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10); }
+const isYmd = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
+
+// BÁO CÁO NHANH: nhân viên chỉ cần nhập "hôm nay làm bao nhiêu video"
+// Mỗi người mỗi ngày 1 dòng tổng (note='daily') — nhập lại là cập nhật, không cộng dồn.
+app.get('/api/report/today', auth, (req, res) => {
+  const date = isYmd(req.query.date) ? req.query.date : vnToday();
+  const row = db.prepare("SELECT count FROM video_logs WHERE user_id=? AND log_date=? AND key_id IS NULL AND note='daily'").get(req.user.id, date);
+  res.json({ date, count: row ? row.count : 0 });
+});
+
+app.post('/api/report/today', auth, (req, res) => {
+  const date = isYmd(req.body && req.body.date) ? req.body.date : vnToday();
+  const count = Math.max(0, Math.floor(Number(req.body && req.body.count) || 0));
+  const existing = db.prepare("SELECT id FROM video_logs WHERE user_id=? AND log_date=? AND key_id IS NULL AND note='daily'").get(req.user.id, date);
+  if (existing) db.prepare('UPDATE video_logs SET count=? WHERE id=?').run(count, existing.id);
+  else db.prepare("INSERT INTO video_logs (user_id, log_date, count, note) VALUES (?,?,?, 'daily')").run(req.user.id, date, count);
+  res.json({ ok: true, date, count });
 });
 
 app.post('/api/videologs', auth, (req, res) => {
