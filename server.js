@@ -920,8 +920,8 @@ app.get('/api/report/list', auth, (req, res) => {
 // BÁO CÁO NHANH HÔM NAY: đọc số video/kênh/key đã báo cáo của chính mình
 app.get('/api/report/today', auth, (req, res) => {
   const date = isYmd(req.query.date) ? req.query.date : vnToday();
-  const r = db.prepare('SELECT videos, channels, keys FROM daily_reports WHERE user_id=? AND report_date=?').get(req.user.id, date);
-  res.json({ date, videos: r ? r.videos : 0, channels: r ? r.channels : 0, keys: r ? r.keys : 0 });
+  const r = db.prepare('SELECT videos, channels, keys, note FROM daily_reports WHERE user_id=? AND report_date=?').get(req.user.id, date);
+  res.json({ date, videos: r ? r.videos : 0, channels: r ? r.channels : 0, keys: r ? r.keys : 0, note: r ? r.note || '' : '' });
 });
 
 // Lưu báo cáo nhanh hôm nay (nhập lại là cập nhật, không cộng dồn)
@@ -931,11 +931,12 @@ app.post('/api/report/today', auth, (req, res) => {
   const videos = Math.max(0, Math.floor(Number(b.videos) || 0));
   const channels = Math.max(0, Math.floor(Number(b.channels) || 0));
   const keys = Math.max(0, Math.floor(Number(b.keys) || 0));
-  db.prepare(`INSERT INTO daily_reports (user_id, report_date, videos, channels, keys, updated_at)
-    VALUES (?,?,?,?,?, datetime('now'))
-    ON CONFLICT(user_id, report_date) DO UPDATE SET videos=excluded.videos, channels=excluded.channels, keys=excluded.keys, updated_at=datetime('now')`)
-    .run(req.user.id, date, videos, channels, keys);
-  res.json({ ok: true, date, videos, channels, keys });
+  const note = (b.note || '').toString().trim().slice(0, 1000) || null;
+  db.prepare(`INSERT INTO daily_reports (user_id, report_date, videos, channels, keys, note, updated_at)
+    VALUES (?,?,?,?,?,?, datetime('now'))
+    ON CONFLICT(user_id, report_date) DO UPDATE SET videos=excluded.videos, channels=excluded.channels, keys=excluded.keys, note=excluded.note, updated_at=datetime('now')`)
+    .run(req.user.id, date, videos, channels, keys, note);
+  res.json({ ok: true, date, videos, channels, keys, note: note || '' });
 });
 
 // Sửa / xóa 1 dòng báo cáo ngày (chính mình; admin sửa được mọi người)
@@ -944,8 +945,9 @@ app.put('/api/report/:id', auth, (req, res) => {
   if (!row) return res.status(404).json({ error: 'Không tìm thấy' });
   if (req.user.role !== 'admin' && row.user_id !== req.user.id) return res.status(403).json({ error: 'Không có quyền' });
   const b = req.body || {};
-  db.prepare("UPDATE daily_reports SET videos=?, channels=?, keys=?, updated_at=datetime('now') WHERE id=?")
-    .run(Math.max(0, Math.floor(Number(b.videos) || 0)), Math.max(0, Math.floor(Number(b.channels) || 0)), Math.max(0, Math.floor(Number(b.keys) || 0)), row.id);
+  const note = b.note !== undefined ? ((b.note || '').toString().trim().slice(0, 1000) || null) : row.note;
+  db.prepare("UPDATE daily_reports SET videos=?, channels=?, keys=?, note=?, updated_at=datetime('now') WHERE id=?")
+    .run(Math.max(0, Math.floor(Number(b.videos) || 0)), Math.max(0, Math.floor(Number(b.channels) || 0)), Math.max(0, Math.floor(Number(b.keys) || 0)), note, row.id);
   res.json({ ok: true });
 });
 
@@ -955,6 +957,42 @@ app.delete('/api/report/:id', auth, (req, res) => {
   if (req.user.role !== 'admin' && row.user_id !== req.user.id) return res.status(403).json({ error: 'Không có quyền' });
   db.prepare('DELETE FROM daily_reports WHERE id=?').run(row.id);
   res.json({ ok: true });
+});
+
+// ============ SẢNH CHÍNH (thông báo + hỏi đáp) ============
+app.get('/api/messages', auth, (req, res) => {
+  const all = db.prepare('SELECT * FROM messages ORDER BY created_at ASC').all();
+  const byParent = {};
+  all.filter((m) => m.parent_id).forEach((r) => { (byParent[r.parent_id] = byParent[r.parent_id] || []).push(r); });
+  const tops = all.filter((m) => !m.parent_id).map((t) => ({ ...t, replies: byParent[t.id] || [] }));
+  tops.sort((a, b) => (b.pinned - a.pinned) || (b.created_at < a.created_at ? -1 : 1)); // ghim lên đầu, mới nhất trước
+  res.json(tops);
+});
+
+app.post('/api/messages', auth, (req, res) => {
+  const content = (req.body && req.body.content || '').toString().trim();
+  if (!content) return res.status(400).json({ error: 'Chưa nhập nội dung' });
+  let parentId = req.body && req.body.parent_id ? Number(req.body.parent_id) : null;
+  if (parentId) { const p = db.prepare('SELECT id, parent_id FROM messages WHERE id=?').get(parentId); if (!p) parentId = null; else if (p.parent_id) parentId = p.parent_id; } // trả lời luôn gắn vào bài gốc
+  const info = db.prepare('INSERT INTO messages (user_id, user_name, role, content, parent_id) VALUES (?,?,?,?,?)')
+    .run(req.user.id, req.user.name, req.user.role, content.slice(0, 3000), parentId);
+  res.json(db.prepare('SELECT * FROM messages WHERE id=?').get(info.lastInsertRowid));
+});
+
+app.delete('/api/messages/:id', auth, (req, res) => {
+  const m = db.prepare('SELECT * FROM messages WHERE id=?').get(req.params.id);
+  if (!m) return res.status(404).json({ error: 'Không tìm thấy' });
+  if (req.user.role !== 'admin' && m.user_id !== req.user.id) return res.status(403).json({ error: 'Không có quyền' });
+  db.prepare('DELETE FROM messages WHERE id=? OR parent_id=?').run(m.id, m.id); // xóa bài kèm các trả lời
+  res.json({ ok: true });
+});
+
+// Admin ghim / bỏ ghim 1 thông báo lên đầu
+app.post('/api/messages/:id/pin', auth, adminOnly, (req, res) => {
+  const m = db.prepare('SELECT * FROM messages WHERE id=?').get(req.params.id);
+  if (!m || m.parent_id) return res.status(404).json({ error: 'Không tìm thấy' });
+  db.prepare('UPDATE messages SET pinned=? WHERE id=?').run(m.pinned ? 0 : 1, m.id);
+  res.json({ ok: true, pinned: m.pinned ? 0 : 1 });
 });
 
 app.post('/api/videologs', auth, (req, res) => {

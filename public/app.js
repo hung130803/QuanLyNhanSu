@@ -189,6 +189,7 @@ function buildNav() {
   const isAdmin = State.user.role === 'admin';
   const items = [
     { id: 'dashboard', icon: '📊', label: 'Tổng quan' },
+    { id: 'board', icon: '📢', label: 'Sảnh chính' },
     { id: 'keys', icon: '🔑', label: 'Key YouTube' },
     { id: 'tiktok', icon: '📱', label: 'Kênh TikTok' },
     { id: 'growth', icon: '📈', label: 'Tăng trưởng' },
@@ -211,7 +212,7 @@ function buildNav() {
   });
 }
 
-const PAGE_TITLES = { dashboard: 'Tổng quan', keys: 'Key YouTube', tiktok: 'Kênh TikTok', videos: 'Báo cáo công việc', growth: 'Tăng trưởng kênh', staff: 'Nhân sự', finance: 'Lợi nhuận', activity: 'Lịch sử thao tác', trash: 'Thùng rác', settings: 'Cài đặt' };
+const PAGE_TITLES = { dashboard: 'Tổng quan', board: 'Sảnh chính', keys: 'Key YouTube', tiktok: 'Kênh TikTok', videos: 'Báo cáo công việc', growth: 'Tăng trưởng kênh', staff: 'Nhân sự', finance: 'Lợi nhuận', activity: 'Lịch sử thao tác', trash: 'Thùng rác', settings: 'Cài đặt' };
 
 // Điều hướng có lưu lịch sử (để nút "quay lại" của chuột/trình duyệt hoạt động)
 function navigate(page) {
@@ -232,7 +233,7 @@ function renderPage(page) {
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.page === page));
   $('#topbar-right').innerHTML = '';
   closeMenu();
-  const renderers = { dashboard: renderDashboard, keys: renderKeys, tiktok: renderTiktok, growth: renderGrowth, videos: renderVideos, staff: renderStaff, finance: renderFinance, activity: renderActivity, trash: renderTrash, settings: renderSettings };
+  const renderers = { dashboard: renderDashboard, board: renderBoard, keys: renderKeys, tiktok: renderTiktok, growth: renderGrowth, videos: renderVideos, staff: renderStaff, finance: renderFinance, activity: renderActivity, trash: renderTrash, settings: renderSettings };
   (renderers[page] || renderDashboard)();
 }
 
@@ -407,6 +408,91 @@ function optimisticClaim(id, release) {
   api('/keys/' + id + '/claim', { method: 'POST', body: release ? { release: true } : {} })
     .then((updated) => { const idx = keysCache.findIndex((x) => x.id == id); if (idx >= 0 && updated && updated.id) keysCache[idx] = updated; })
     .catch((e) => { toast(e.message, 'err'); renderKeys(); });
+}
+
+// ============ SẢNH CHÍNH (thông báo + hỏi đáp) ============
+let boardLast = null;
+
+async function renderBoard() {
+  $('#topbar-right').innerHTML = '';
+  const view = $('#view');
+  if (boardLast) drawBoard(boardLast);
+  else view.innerHTML = '<div class="loading">Đang tải sảnh chính…</div>';
+  try { const data = await api('/messages'); boardLast = data; if (State.page === 'board') drawBoard(boardLast); }
+  catch (e) { if (!boardLast) view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+
+function drawBoard(posts) {
+  const view = $('#view');
+  const isAdmin = State.user.role === 'admin';
+  const meId = State.user.id;
+  const avatar = (n) => `<div class="msg-avatar">${esc((n || '?').charAt(0).toUpperCase())}</div>`;
+  const roleBadge = (role) => role === 'admin' ? '<span class="msg-role admin">📢 Quản trị</span>' : '<span class="msg-role">Nhân sự</span>';
+
+  const replyHtml = (r) => `<div class="msg-reply">
+    ${avatar(r.user_name)}
+    <div class="msg-body">
+      <div class="msg-head"><b>${esc(r.user_name || '?')}</b> ${roleBadge(r.role)} <span class="msg-time">${timeAgo(r.created_at)}</span>
+        ${(isAdmin || r.user_id === meId) ? `<button class="btn-link" data-msgdel="${r.id}">xóa</button>` : ''}</div>
+      <div class="msg-content">${esc(r.content)}</div>
+    </div></div>`;
+
+  const postHtml = (p) => `<div class="msg-card${p.pinned ? ' pinned' : ''}">
+    ${p.pinned ? '<div class="msg-pin">📌 Thông báo đã ghim</div>' : ''}
+    <div class="msg-top">${avatar(p.user_name)}
+      <div class="msg-body">
+        <div class="msg-head"><b>${esc(p.user_name || '?')}</b> ${roleBadge(p.role)} <span class="msg-time">${fmtDateTime(p.created_at)}</span></div>
+        <div class="msg-content">${esc(p.content)}</div>
+      </div>
+    </div>
+    <div class="msg-actions">
+      <button class="btn-link" data-msgreply="${p.id}">💬 Trả lời${p.replies.length ? ' (' + p.replies.length + ')' : ''}</button>
+      ${isAdmin ? `<button class="btn-link" data-msgpin="${p.id}">${p.pinned ? 'Bỏ ghim' : '📌 Ghim'}</button>` : ''}
+      ${(isAdmin || p.user_id === meId) ? `<button class="btn-link" data-msgdel="${p.id}">🗑️ Xóa</button>` : ''}
+    </div>
+    ${p.replies.length ? `<div class="msg-replies">${p.replies.map(replyHtml).join('')}</div>` : ''}
+    <div class="msg-replybox" id="rb-${p.id}" style="display:none">
+      <input class="msg-input" id="ri-${p.id}" placeholder="Viết trả lời…" autocomplete="off">
+      <button class="btn btn-sm btn-primary" data-msgsend="${p.id}">Gửi</button>
+    </div>
+  </div>`;
+
+  view.innerHTML = `
+    <div class="panel msg-new">
+      <div class="panel-title">${isAdmin ? '📢 Đăng thông báo cho cả team' : '✍️ Gửi câu hỏi / thắc mắc cho admin'}</div>
+      <textarea id="msg-new" rows="3" placeholder="${isAdmin ? 'Viết thông báo cho cả team…' : 'Viết câu hỏi hoặc thắc mắc của bạn… admin sẽ trả lời ngay tại đây.'}"></textarea>
+      <div class="form-actions"><button class="btn btn-primary" id="msg-post">Đăng lên sảnh</button></div>
+    </div>
+    ${posts.length ? `<div class="msg-feed">${posts.map(postHtml).join('')}</div>`
+      : '<div class="empty"><div class="empty-icon">📢</div>Chưa có bài nào. Hãy đăng bài đầu tiên!</div>'}`;
+
+  const postBtn = $('#msg-post');
+  postBtn.onclick = async () => {
+    const content = $('#msg-new').value.trim(); if (!content) return toast('Chưa nhập nội dung', 'err');
+    const unlock = lockBtn(postBtn);
+    try { await api('/messages', { method: 'POST', body: { content } }); $('#msg-new').value = ''; boardLast = null; renderBoard(); }
+    catch (e) { toast(e.message, 'err'); } finally { unlock(); }
+  };
+  view.querySelectorAll('[data-msgreply]').forEach((b) => b.onclick = () => {
+    const box = $('#rb-' + b.dataset.msgreply); if (!box) return;
+    box.style.display = box.style.display === 'none' ? 'flex' : 'none';
+    if (box.style.display !== 'none') $('#ri-' + b.dataset.msgreply)?.focus();
+  });
+  const sendReply = async (id, btn) => {
+    const inp = $('#ri-' + id); const content = (inp && inp.value.trim()) || ''; if (!content) return;
+    const unlock = lockBtn(btn);
+    try { await api('/messages', { method: 'POST', body: { content, parent_id: id } }); boardLast = null; renderBoard(); }
+    catch (e) { toast(e.message, 'err'); } finally { unlock(); }
+  };
+  view.querySelectorAll('[data-msgsend]').forEach((b) => b.onclick = () => sendReply(b.dataset.msgsend, b));
+  view.querySelectorAll('.msg-input').forEach((inp) => inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); sendReply(inp.id.replace('ri-', ''), view.querySelector(`[data-msgsend="${inp.id.replace('ri-', '')}"]`)); } });
+  view.querySelectorAll('[data-msgdel]').forEach((b) => b.onclick = async () => {
+    if (!confirm('Xóa bài này?')) return;
+    try { await api('/messages/' + b.dataset.msgdel, { method: 'DELETE' }); boardLast = null; renderBoard(); } catch (e) { toast(e.message, 'err'); }
+  });
+  view.querySelectorAll('[data-msgpin]').forEach((b) => b.onclick = async () => {
+    try { await api('/messages/' + b.dataset.msgpin + '/pin', { method: 'POST', body: {} }); boardLast = null; renderBoard(); } catch (e) { toast(e.message, 'err'); }
+  });
 }
 
 // ============ KEYS ============
@@ -1404,7 +1490,7 @@ async function renderVideos() {
 function drawReport(data, expBtn) {
   const { work, list, from, to } = data;
   const today = data.today || localDate();
-  const my = data.my || { videos: 0, channels: 0, keys: 0 };
+  const my = data.my || { videos: 0, channels: 0, keys: 0, note: '' };
   const view = $('#view');
   const isAdmin = State.user.role === 'admin';
   const t = work.totals || { videos: 0, channels: 0, keys: 0 };
@@ -1428,10 +1514,11 @@ function drawReport(data, expBtn) {
 
   const detailRows = list.map((d) => `<tr>
     <td class="nowrap">${fmtDate(d.report_date)}</td>
-    ${isAdmin ? `<td>${esc(d.user_name)}</td>` : ''}
+    ${isAdmin ? `<td><b>${esc(d.user_name)}</b></td>` : ''}
     <td><b class="text-accent">${fmtNum(d.videos)}</b></td>
     <td>${fmtNum(d.channels)}</td>
     <td>${fmtNum(d.keys)}</td>
+    <td class="cell-sub" style="max-width:280px;white-space:normal">${d.note ? esc(d.note) : '<span class="muted">—</span>'}</td>
     <td><div class="row-actions">
       <button class="btn-icon" data-redit="${d.id}">✏️</button>
       <button class="btn-icon" data-rdel="${d.id}">🗑️</button>
@@ -1448,10 +1535,13 @@ function drawReport(data, expBtn) {
         <label class="qr-field"><span>🎬 Video đã làm</span><input type="number" id="qr-videos" min="0" value="${my.videos}" inputmode="numeric"></label>
         <label class="qr-field"><span>📱 Kênh đã làm</span><input type="number" id="qr-channels" min="0" value="${my.channels}" inputmode="numeric"></label>
         <label class="qr-field"><span>🔑 Key đã test</span><input type="number" id="qr-keys" min="0" value="${my.keys}" inputmode="numeric"></label>
-        <button class="btn btn-primary" id="qr-save">💾 Lưu báo cáo</button>
       </div>
-      ${hasMy ? `<div class="qr-saved">✓ đã ghi hôm nay: ${fmtNum(my.videos)} video · ${fmtNum(my.channels)} kênh · ${fmtNum(my.keys)} key</div>` : ''}
-      <div class="hint">Cuối ngày gõ 3 số rồi bấm Lưu. Muốn sửa thì gõ lại số mới rồi Lưu (không bị cộng dồn).</div>
+      <textarea id="qr-note" class="qr-note" rows="2" placeholder="Ghi chú gửi admin (không bắt buộc) — ví dụ: hôm nay kênh X bị lỗi, cần thêm key…">${esc(my.note || '')}</textarea>
+      <div class="qr-actions">
+        <button class="btn btn-primary" id="qr-save">💾 Lưu báo cáo</button>
+        ${hasMy ? `<span class="qr-saved">✓ đã ghi hôm nay: ${fmtNum(my.videos)} video · ${fmtNum(my.channels)} kênh · ${fmtNum(my.keys)} key</span>` : ''}
+      </div>
+      <div class="hint">Cuối ngày gõ 3 số (và ghi chú nếu cần) rồi bấm Lưu. Muốn sửa thì gõ lại rồi Lưu (không bị cộng dồn).</div>
     </div>
     <div class="filter-tabs">${tabsHtml}</div>
     ${reportPeriod === 'custom' ? `<div class="toolbar">
@@ -1464,16 +1554,16 @@ function drawReport(data, expBtn) {
       <div class="kpi"><div class="kpi-icon">🔑</div><div class="kpi-label">Tổng key đã test</div><div class="kpi-value">${fmtNum(t.keys)}</div><div class="kpi-sub">${rangeLabel}</div></div>
       <div class="kpi primary clickable" data-gogrowth="1"><div class="kpi-icon">📈</div><div class="kpi-label">Tốc độ phát triển kênh</div><div class="kpi-value" style="font-size:18px">Xem từng kênh</div><div class="kpi-sub">mở trang Tăng trưởng →</div></div>
     </div>
-    <div class="panel">
-      <div class="panel-title">📊 ${isAdmin ? 'Báo cáo theo nhân viên' : 'Kết quả của tôi'} &nbsp;<span class="muted" style="font-weight:400;font-size:13px">${rangeLabel}</span></div>
+    ${isAdmin ? `<div class="panel">
+      <div class="panel-title">📊 Báo cáo theo nhân viên &nbsp;<span class="muted" style="font-weight:400;font-size:13px">${rangeLabel}</span></div>
       <div class="table-wrap"><table>
         <thead><tr><th>#</th><th>Nhân viên</th><th>🎬 Video</th><th>📱 Kênh</th><th>🔑 Key test</th></tr></thead>
         <tbody>${repRows}</tbody></table></div>
-    </div>
+    </div>` : ''}
     <div class="panel">
-      <div class="panel-title">📅 Chi tiết theo ngày</div>
+      <div class="panel-title">📅 Chi tiết theo ngày${isAdmin ? '' : ' của tôi'}</div>
       ${list.length ? `<div class="table-wrap"><table>
-        <thead><tr><th>Ngày</th>${isAdmin ? '<th>Nhân sự</th>' : ''}<th>🎬 Video</th><th>📱 Kênh</th><th>🔑 Key test</th><th></th></tr></thead>
+        <thead><tr><th>Ngày</th>${isAdmin ? '<th>Nhân sự</th>' : ''}<th>🎬 Video</th><th>📱 Kênh</th><th>🔑 Key test</th><th>Ghi chú</th><th></th></tr></thead>
         <tbody>${detailRows}</tbody></table></div>`
         : '<div class="empty" style="padding:24px">Chưa có báo cáo nào trong kỳ này.</div>'}
     </div>`;
@@ -1489,9 +1579,10 @@ function drawReport(data, expBtn) {
           videos: Number($('#qr-videos').value) || 0,
           channels: Number($('#qr-channels').value) || 0,
           keys: Number($('#qr-keys').value) || 0,
+          note: $('#qr-note') ? $('#qr-note').value : '',
         };
         const r = await api('/report/today', { method: 'POST', body });
-        if (reportLast) reportLast.my = { videos: r.videos, channels: r.channels, keys: r.keys };
+        if (reportLast) reportLast.my = { videos: r.videos, channels: r.channels, keys: r.keys, note: r.note };
         toast(`✓ Đã lưu báo cáo hôm nay: ${fmtNum(r.videos)} video · ${fmtNum(r.channels)} kênh · ${fmtNum(r.keys)} key`);
         renderVideos();
       } catch (e) { toast(e.message, 'err'); } finally { unlock(); }
@@ -1516,11 +1607,12 @@ function reportEditForm(d) {
       <div class="form-row"><label>📱 Kênh</label><input type="number" id="r-channels" min="0" value="${d.channels}"></div>
     </div>
     <div class="form-row"><label>🔑 Key đã test</label><input type="number" id="r-keys" min="0" value="${d.keys}"></div>
+    <div class="form-row"><label>Ghi chú</label><textarea id="r-note" rows="2">${esc(d.note || '')}</textarea></div>
     <div class="form-actions"><button type="submit" class="btn btn-primary">Lưu thay đổi</button></div>
   </form>`);
   form.onsubmit = async (e) => {
     e.preventDefault();
-    const body = { videos: Number(form.querySelector('#r-videos').value) || 0, channels: Number(form.querySelector('#r-channels').value) || 0, keys: Number(form.querySelector('#r-keys').value) || 0 };
+    const body = { videos: Number(form.querySelector('#r-videos').value) || 0, channels: Number(form.querySelector('#r-channels').value) || 0, keys: Number(form.querySelector('#r-keys').value) || 0, note: form.querySelector('#r-note').value };
     const unlock = lockBtn(form);
     try { await api('/report/' + d.id, { method: 'PUT', body }); toast('Đã cập nhật'); closeModal(); renderVideos(); }
     catch (err) { toast(err.message, 'err'); } finally { unlock(); }

@@ -370,10 +370,35 @@ td.stt { color: var(--text-dim); font-weight: 700; text-align: center; width: 36
 .qr-field span { font-size: 13px; font-weight: 600; color: var(--text-dim); }
 .qr-field input { width: 140px; font-size: 20px; font-weight: 800; text-align: center; padding: 9px 10px; }
 .qr-grid .btn { height: 42px; }
+.qr-note { width: 100%; margin: 4px 0 10px; resize: vertical; }
+.qr-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; }
 @media (max-width: 640px) {
   .qr-field { flex: 1; min-width: 90px; }
   .qr-field input { width: 100%; }
   .qr-grid .btn { width: 100%; }
+  .qr-actions .btn { width: 100%; }
+}
+
+/* ============ SẢNH CHÍNH (bảng tin) ============ */
+.msg-new textarea { width: 100%; resize: vertical; margin-bottom: 10px; }
+.msg-feed { display: flex; flex-direction: column; gap: 14px; }
+.msg-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; background: var(--card); }
+.msg-card.pinned { border-color: var(--warn); background: linear-gradient(180deg, #ffb02010, transparent 60%); }
+.msg-pin { font-size: 12px; font-weight: 700; color: var(--warn); margin-bottom: 8px; }
+.msg-top, .msg-reply { display: flex; gap: 10px; align-items: flex-start; }
+.msg-avatar { width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #fff; background: linear-gradient(135deg, var(--primary), var(--info)); }
+.msg-body { flex: 1; min-width: 0; }
+.msg-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13.5px; }
+.msg-time { font-size: 12px; color: var(--text-dim); }
+.msg-role { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 20px; background: var(--bg-soft); color: var(--text-dim); }
+.msg-role.admin { background: #6c5ce733; color: var(--primary-soft); }
+.msg-content { margin-top: 4px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.msg-actions { display: flex; gap: 16px; margin-top: 10px; padding-left: 44px; }
+.msg-replies { margin: 10px 0 4px; padding: 10px 0 0 16px; border-top: 1px dashed var(--border); display: flex; flex-direction: column; gap: 12px; }
+.msg-replybox { display: flex; gap: 8px; margin-top: 10px; padding-left: 44px; }
+.msg-input { flex: 1; }
+@media (max-width: 640px) {
+  .msg-actions, .msg-replybox { padding-left: 0; }
 }
 
 /* ============ TĂNG TRƯỞNG (mũi tên ↑↓) ============ */

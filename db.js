@@ -146,11 +146,25 @@ CREATE TABLE IF NOT EXISTS daily_reports (
   videos      INTEGER NOT NULL DEFAULT 0,
   channels    INTEGER NOT NULL DEFAULT 0,
   keys        INTEGER NOT NULL DEFAULT 0,
+  note        TEXT,                               -- ghi chú nhân viên gửi kèm (admin xem)
   updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE (user_id, report_date),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_dailyrep_date ON daily_reports(report_date);
+
+-- Sảnh chính: thông báo của admin + câu hỏi/thắc mắc của nhân viên (dạng bài + trả lời)
+CREATE TABLE IF NOT EXISTS messages (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER,
+  user_name  TEXT,
+  role       TEXT,                               -- 'admin' | 'staff'
+  content    TEXT NOT NULL,
+  parent_id  INTEGER,                            -- NULL = bài gốc; có giá trị = câu trả lời
+  pinned     INTEGER NOT NULL DEFAULT 0,         -- admin ghim thông báo lên đầu
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id);
 
 CREATE INDEX IF NOT EXISTS idx_videologs_date ON video_logs(log_date);
 CREATE INDEX IF NOT EXISTS idx_videologs_user ON video_logs(user_id);
@@ -181,6 +195,12 @@ addTtCol('verified', 'INTEGER NOT NULL DEFAULT 0');
 addKeyCol('country', 'TEXT'); // quốc gia của key (nước kiếm tiền: US, JP, KR...)
 addKeyCol('deleted_at', 'TEXT'); // thùng rác: NULL = đang dùng, có giá trị = đã xóa
 addTtCol('deleted_at', 'TEXT');
+
+// Thêm cột ghi chú cho báo cáo ngày (DB cũ chưa có)
+try {
+  const drCols = db.prepare('PRAGMA table_info(daily_reports)').all().map((c) => c.name);
+  if (!drCols.includes('note')) db.exec('ALTER TABLE daily_reports ADD COLUMN note TEXT');
+} catch (_) {}
 
 // Tự dọn thùng rác: xóa hẳn những thứ đã ở thùng rác quá 30 ngày
 try {
