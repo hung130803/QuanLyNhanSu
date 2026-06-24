@@ -191,6 +191,7 @@ function buildNav() {
     { id: 'dashboard', icon: '📊', label: 'Tổng quan' },
     { id: 'keys', icon: '🔑', label: 'Key YouTube' },
     { id: 'tiktok', icon: '📱', label: 'Kênh TikTok' },
+    { id: 'growth', icon: '📈', label: 'Tăng trưởng' },
     { id: 'videos', icon: '📊', label: 'Báo cáo' },
   ];
   if (isAdmin) {
@@ -210,7 +211,7 @@ function buildNav() {
   });
 }
 
-const PAGE_TITLES = { dashboard: 'Tổng quan', keys: 'Key YouTube', tiktok: 'Kênh TikTok', videos: 'Báo cáo công việc', staff: 'Nhân sự', finance: 'Lợi nhuận', activity: 'Lịch sử thao tác', trash: 'Thùng rác', settings: 'Cài đặt' };
+const PAGE_TITLES = { dashboard: 'Tổng quan', keys: 'Key YouTube', tiktok: 'Kênh TikTok', videos: 'Báo cáo công việc', growth: 'Tăng trưởng kênh', staff: 'Nhân sự', finance: 'Lợi nhuận', activity: 'Lịch sử thao tác', trash: 'Thùng rác', settings: 'Cài đặt' };
 
 // Điều hướng có lưu lịch sử (để nút "quay lại" của chuột/trình duyệt hoạt động)
 function navigate(page) {
@@ -231,7 +232,7 @@ function renderPage(page) {
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.page === page));
   $('#topbar-right').innerHTML = '';
   closeMenu();
-  const renderers = { dashboard: renderDashboard, keys: renderKeys, tiktok: renderTiktok, videos: renderVideos, staff: renderStaff, finance: renderFinance, activity: renderActivity, trash: renderTrash, settings: renderSettings };
+  const renderers = { dashboard: renderDashboard, keys: renderKeys, tiktok: renderTiktok, growth: renderGrowth, videos: renderVideos, staff: renderStaff, finance: renderFinance, activity: renderActivity, trash: renderTrash, settings: renderSettings };
   (renderers[page] || renderDashboard)();
 }
 
@@ -937,16 +938,11 @@ function drawTiktok() {
     ? `<div class="collapse-bar"><button class="btn btn-sm btn-ghost" id="tt-toggle-all">${allCollapsed ? '▾ Mở tất cả nhóm' : '▸ Thu gọn tất cả nhóm'}</button><span class="muted">${list.length} kênh • ${groupKeys.length} nước</span></div>`
     : '';
 
-  // Thanh tóm tắt tăng trưởng trong ngày (so với hôm trước)
-  const anyPrev = list.some((t) => t.prev_followers != null);
-  const sumDF = list.reduce((a, t) => a + (deltaOf(t.followers, t.prev_followers) || 0), 0);
-  const sumDV = list.reduce((a, t) => a + (deltaOf(t.video_count, t.prev_videos) || 0), 0);
-  const growthBar = anyPrev ? `<div class="growth-bar">
-    <span class="gb-title">📈 Hôm nay (so với hôm trước):</span>
-    <span class="gb-item">Follow ${deltaBadge(sumDF, true) || '<span class="delta flat">–</span>'}</span>
-    <span class="gb-item">Video mới ${deltaBadge(sumDV, false) || '<span class="delta flat">–</span>'}</span>
-    <span class="muted gb-hint">Bấm 🔄 "Cập nhật tất cả" mỗi ngày để theo dõi chính xác.</span>
-  </div>` : `<div class="growth-bar"><span class="muted">📈 Bấm 🔄 "Cập nhật tất cả" mỗi ngày để xem kênh tăng/giảm bao nhiêu follow, video mới.</span></div>`;
+  // Thanh nhắc: cột ▲/▼ là tăng/giảm của TỪNG kênh so với hôm trước; xem chi tiết ở trang Tăng trưởng
+  const growthBar = `<div class="growth-bar">
+    <span class="gb-title">📈 Cột "Follow/Video" có ▲/▼ là mức tăng/giảm <b>từng kênh</b> so với hôm trước.</span>
+    <a class="btn btn-sm btn-ghost" data-gogrowth2="1">Xem tốc độ phát triển từng kênh →</a>
+  </div>`;
 
   view.innerHTML = `
     <div class="toolbar">
@@ -980,6 +976,7 @@ function drawTiktok() {
     drawTiktok();
   });
   view.querySelectorAll('[data-grpmore]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); ttFullGroups.add(b.dataset.grpmore); drawTiktok(); });
+  const goG2 = view.querySelector('[data-gogrowth2]'); if (goG2) goG2.onclick = () => navigate('growth');
   const togAll = $('#tt-toggle-all');
   if (togAll) togAll.onclick = () => {
     const everyCollapsed = groupKeys.every((cc) => ttCollapsed.has(cc));
@@ -1282,6 +1279,88 @@ function bulkTiktokForm() {
   openModal('📥 Thêm hàng loạt kênh TikTok', form);
 }
 
+// ============ TĂNG TRƯỞNG TỪNG KÊNH ============
+let growthDays = 7;
+let growthLast = null;
+
+async function renderGrowth() {
+  $('#topbar-right').innerHTML = '';
+  const expBtn = el('<button class="btn btn-ghost">⬇️ Xuất CSV</button>');
+  $('#topbar-right').appendChild(expBtn);
+  const view = $('#view');
+  if (growthLast) drawGrowth(growthLast, expBtn);
+  else view.innerHTML = '<div class="loading">Đang tải tăng trưởng…</div>';
+  try {
+    const data = await api('/report/growth?days=' + growthDays);
+    growthLast = data;
+    if (State.page === 'growth') drawGrowth(growthLast, expBtn);
+  } catch (e) { if (!growthLast) view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+
+function drawGrowth(data, expBtn) {
+  const view = $('#view');
+  const days = data.days;
+  const isAdmin = State.user.role === 'admin';
+  const chans = data.channels || [];
+
+  if (expBtn) expBtn.onclick = () => exportCsv(`tang-truong-${days}ngay.csv`,
+    ['Nhân viên', 'Kênh', 'TikTok ID', 'Nước', 'Follow hiện tại', `Tăng ${days} ngày`, '% tăng', 'Follow/ngày', 'Video mới'],
+    chans.map((c) => [c.owner, c.name, c.tiktok_id || '', c.country || '', c.followers, c.growth ?? '', c.pct ?? '', c.perDay ?? '', c.videoGrowth ?? '']));
+
+  const periods = [[1, '📅 Hôm nay'], [7, '🗓️ 7 ngày'], [30, '📆 30 ngày']];
+  const tabs = periods.map(([d, l]) => `<div class="filter-tab ${growthDays === d ? 'active' : ''}" data-days="${d}">${l}</div>`).join('');
+
+  const hasAnyData = chans.some((c) => c.growth != null);
+
+  // Gom theo nhân viên, mỗi nhóm sắp xếp kênh tăng nhiều nhất lên đầu
+  const groups = {};
+  chans.forEach((c) => { (groups[c.owner] = groups[c.owner] || { owner: c.owner, ownerId: c.owner_id, items: [] }).items.push(c); });
+  const groupList = Object.values(groups).map((g) => {
+    g.items.sort((a, b) => (b.growth ?? -Infinity) - (a.growth ?? -Infinity));
+    g.total = g.items.reduce((a, c) => a + (c.growth || 0), 0);
+    return g;
+  }).sort((a, b) => b.total - a.total);
+
+  const rowHtml = (c, i) => {
+    const g = c.growth;
+    const badge = g == null ? '<span class="delta flat">chưa có</span>' : deltaBadge(g, true);
+    const pct = c.pct != null ? ` <span class="muted">(${c.pct >= 0 ? '+' : ''}${c.pct}%)</span>` : '';
+    const rate = (c.perDay != null && days > 1) ? `${c.perDay >= 0 ? '+' : '−'}${fmtCompact(Math.abs(c.perDay))}/ngày` : '—';
+    const fire = (i === 0 && g > 0) ? ' <span title="Tăng nhanh nhất nhóm">🚀</span>' : '';
+    const stalled = (g === 0) ? ' <span class="muted" title="Chưa tăng">⚠️</span>' : '';
+    return `<tr data-ttgo3="${c.id}" class="selectable-row">
+      <td class="stt">${i + 1}</td>
+      <td><b>${esc(c.name)}</b> ${flag(c.country)}${fire}${stalled}<div class="cell-sub">${c.tiktok_id ? '@' + esc(c.tiktok_id) : ''}</div></td>
+      <td><b class="text-accent">${fmtCompact(c.followers)}</b></td>
+      <td>${badge}${pct}</td>
+      <td class="cell-sub nowrap">${rate}</td>
+      <td>${c.videoGrowth != null ? deltaBadge(c.videoGrowth, false) : '<span class="muted">—</span>'}</td>
+    </tr>`;
+  };
+
+  const thead = `<thead><tr><th>#</th><th>Kênh</th><th>Follow</th><th>Tăng ${days === 1 ? 'hôm nay' : days + ' ngày'}</th><th>Tốc độ</th><th>Video mới</th></tr></thead>`;
+  const groupsHtml = groupList.map((g) => `
+    <div class="panel">
+      <div class="panel-title">👤 ${esc(g.owner)} <span class="muted" style="font-weight:400;font-size:13px">· ${g.items.length} kênh · tổng ${g.total >= 0 ? '+' : '−'}${fmtCompact(Math.abs(g.total))} follow</span>
+        ${g.ownerId != null ? `<a class="btn-link" data-ttuser="${g.ownerId}" style="float:right;font-weight:400">mở danh sách →</a>` : ''}</div>
+      <div class="table-wrap"><table>${thead}<tbody>${g.items.map(rowHtml).join('')}</tbody></table></div>
+    </div>`).join('');
+
+  view.innerHTML = `
+    <div class="filter-tabs">${tabs}</div>
+    <div class="hint" style="margin-bottom:14px">📈 Sắp xếp kênh tăng follow nhiều nhất lên đầu. 🚀 = tăng nhanh nhất nhóm, ⚠️ = chưa tăng. Số liệu tự cập nhật mỗi 6 tiếng.</div>
+    ${!chans.length ? '<div class="empty"><div class="empty-icon">📈</div>Chưa có kênh nào.</div>'
+      : !hasAnyData ? '<div class="empty"><div class="empty-icon">⏳</div>Cần ít nhất 2 ngày dữ liệu để tính tốc độ phát triển.<br>Hệ thống tự cập nhật mỗi 6 tiếng — quay lại sau 1–2 ngày sẽ thấy đầy đủ.</div>' + groupsHtml
+      : groupsHtml}`;
+
+  view.querySelectorAll('[data-days]').forEach((t) => t.onclick = () => { growthDays = +t.dataset.days; growthLast = null; renderGrowth(); });
+  view.querySelectorAll('[data-ttgo3]').forEach((r) => r.onclick = async (e) => {
+    if (e.target.closest('a')) return;
+    try { if (!tiktokCache.length) tiktokCache = await api('/tiktok'); const t = tiktokCache.find((x) => x.id == r.dataset.ttgo3); if (t) tiktokDetail(t); } catch (_) {}
+  });
+  view.querySelectorAll('[data-ttuser]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); ttPerson = b.dataset.ttuser || ''; ttSearch = ''; ttCountry = 'all'; navigate('tiktok'); });
+}
+
 // ============ BÁO CÁO CÔNG VIỆC (ngày / tuần / tháng) ============
 let reportPeriod = 'today'; // today | week | month | custom
 let videoFrom = '', videoTo = '';
@@ -1361,12 +1440,6 @@ function drawReport(data, expBtn) {
 
   const rangeLabel = from === to ? fmtDate(from) : `${fmtDate(from)} → ${fmtDate(to)}`;
   const hasMy = my.videos || my.channels || my.keys;
-  // Thẻ tăng trưởng TikTok (đưa ngay vào báo cáo)
-  const growthCard = `<div class="kpi ${g.followers >= 0 ? 'primary' : 'danger'}">
-    <div class="kpi-icon">📈</div><div class="kpi-label">Follow tăng/giảm hôm nay</div>
-    <div class="kpi-value">${g.hasData ? (g.followers >= 0 ? '+' : '−') + fmtCompact(Math.abs(g.followers)) : '—'}</div>
-    <div class="kpi-sub">${g.hasData ? (g.videos >= 0 ? '+' : '') + fmtNum(g.videos) + ' video mới hôm nay' : 'cần ≥1 ngày dữ liệu'}</div>
-  </div>`;
 
   view.innerHTML = `
     <div class="panel quick-report">
@@ -1389,7 +1462,7 @@ function drawReport(data, expBtn) {
       <div class="kpi accent"><div class="kpi-icon">🎬</div><div class="kpi-label">Tổng video đã làm</div><div class="kpi-value">${fmtNum(t.videos)}</div><div class="kpi-sub">${rangeLabel}</div></div>
       <div class="kpi info"><div class="kpi-icon">📱</div><div class="kpi-label">Tổng kênh đã làm</div><div class="kpi-value">${fmtNum(t.channels)}</div><div class="kpi-sub">${rangeLabel}</div></div>
       <div class="kpi"><div class="kpi-icon">🔑</div><div class="kpi-label">Tổng key đã test</div><div class="kpi-value">${fmtNum(t.keys)}</div><div class="kpi-sub">${rangeLabel}</div></div>
-      ${growthCard}
+      <div class="kpi primary clickable" data-gogrowth="1"><div class="kpi-icon">📈</div><div class="kpi-label">Tốc độ phát triển kênh</div><div class="kpi-value" style="font-size:18px">Xem từng kênh</div><div class="kpi-sub">mở trang Tăng trưởng →</div></div>
     </div>
     <div class="panel">
       <div class="panel-title">📊 ${isAdmin ? 'Báo cáo theo nhân viên' : 'Kết quả của tôi'} &nbsp;<span class="muted" style="font-weight:400;font-size:13px">${rangeLabel}</span></div>
@@ -1427,6 +1500,7 @@ function drawReport(data, expBtn) {
     ['#qr-videos', '#qr-channels', '#qr-keys'].forEach((s) => { const el2 = $(s); if (el2) el2.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); doSave(); } }; });
   }
   view.querySelectorAll('[data-period]').forEach((tb) => tb.onclick = () => { reportPeriod = tb.dataset.period; renderVideos(); });
+  const goG = view.querySelector('[data-gogrowth]'); if (goG) goG.onclick = () => navigate('growth');
   if ($('#v-from')) $('#v-from').onchange = (e) => { videoFrom = e.target.value; renderVideos(); };
   if ($('#v-to')) $('#v-to').onchange = (e) => { videoTo = e.target.value; renderVideos(); };
   view.querySelectorAll('[data-redit]').forEach((b) => b.onclick = () => { const d = list.find((x) => x.id == b.dataset.redit); reportEditForm(d); });

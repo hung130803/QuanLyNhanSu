@@ -875,6 +875,37 @@ app.get('/api/report/work', auth, (req, res) => {
   res.json({ from: from || null, to: to || null, perUser, totals, growth: tiktokGrowth(req) });
 });
 
+// TĂNG TRƯỞNG TỪNG KÊNH trong N ngày — để biết kênh nào phát triển nhanh/chậm
+app.get('/api/report/growth', auth, (req, res) => {
+  const days = Math.min(90, Math.max(1, parseInt(req.query.days, 10) || 7));
+  const isAdmin = req.user.role === 'admin';
+  const me = req.user.id;
+  const scope = isAdmin ? '' : ` AND (t.assigned_to=${me} OR t.added_by=${me})`;
+  const cutoff = `date('now','+7 hours','-${days} days')`;
+  const rows = db.prepare(`
+    SELECT t.id, t.name, t.tiktok_id, t.country, t.followers, t.video_count, t.status, t.url,
+           t.assigned_to AS owner_id, COALESCE(u.name,'(chưa giao)') AS owner,
+           (SELECT s.followers   FROM tiktok_snapshots s WHERE s.channel_id=t.id AND s.snap_date <= ${cutoff} ORDER BY s.snap_date DESC LIMIT 1) AS base_f,
+           (SELECT s.video_count FROM tiktok_snapshots s WHERE s.channel_id=t.id AND s.snap_date <= ${cutoff} ORDER BY s.snap_date DESC LIMIT 1) AS base_v,
+           (SELECT s.followers   FROM tiktok_snapshots s WHERE s.channel_id=t.id ORDER BY s.snap_date ASC LIMIT 1) AS first_f,
+           (SELECT COUNT(*)      FROM tiktok_snapshots s WHERE s.channel_id=t.id) AS snap_count
+    FROM tiktok_channels t LEFT JOIN users u ON u.id=t.assigned_to
+    WHERE t.deleted_at IS NULL${scope}`).all();
+  const channels = rows.map((c) => {
+    // Mốc nền: ưu tiên mốc cách đây N ngày; chưa đủ N ngày thì lấy mốc đầu tiên (nếu có ≥2 mốc)
+    let base = null;
+    if (c.base_f != null) base = c.base_f;
+    else if (c.snap_count >= 2) base = c.first_f;
+    const growth = base != null ? c.followers - base : null;
+    const pct = (base && base > 0 && growth != null) ? +((growth / base) * 100).toFixed(1) : null;
+    const videoGrowth = c.base_v != null ? c.video_count - c.base_v : null;
+    const perDay = growth != null ? Math.round(growth / days) : null;
+    return { id: c.id, name: c.name, tiktok_id: c.tiktok_id, country: c.country, url: c.url, status: c.status,
+      owner: c.owner, owner_id: c.owner_id, followers: c.followers, growth, pct, videoGrowth, perDay };
+  });
+  res.json({ days, channels });
+});
+
 // Danh sách chi tiết các ngày đã báo cáo (để xem/sửa/xóa)
 app.get('/api/report/list', auth, (req, res) => {
   const { from, to } = req.query;
