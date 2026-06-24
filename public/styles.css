@@ -380,23 +380,50 @@ td.stt { color: var(--text-dim); font-weight: 700; text-align: center; width: 36
 }
 
 /* ============ SẢNH CHÍNH (bảng tin) ============ */
-.msg-new textarea { width: 100%; resize: vertical; margin-bottom: 10px; }
+.msg-new { background: linear-gradient(135deg, #6c5ce71a, #00b8941a 90%); border: 1px solid var(--border); }
+.msg-new-head { font-size: 15px; font-weight: 800; margin-bottom: 12px; }
+.msg-compose { position: relative; }
+.msg-compose textarea { width: 100%; resize: vertical; padding-right: 44px; }
+.msg-compose .emoji-btn { position: absolute; right: 8px; bottom: 10px; }
+.emoji-btn { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 8px; width: 32px; height: 32px; font-size: 17px; cursor: pointer; line-height: 1; transition: transform .1s, background .15s; }
+.emoji-btn:hover { background: var(--card-hover); transform: scale(1.1); }
+
 .msg-feed { display: flex; flex-direction: column; gap: 14px; }
-.msg-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; background: var(--card); }
-.msg-card.pinned { border-color: var(--warn); background: linear-gradient(180deg, #ffb02010, transparent 60%); }
-.msg-pin { font-size: 12px; font-weight: 700; color: var(--warn); margin-bottom: 8px; }
-.msg-top, .msg-reply { display: flex; gap: 10px; align-items: flex-start; }
-.msg-avatar { width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #fff; background: linear-gradient(135deg, var(--primary), var(--info)); }
+.msg-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 15px 17px; background: var(--card); position: relative; transition: border-color .15s, box-shadow .15s; }
+.msg-card:hover { border-color: var(--primary); box-shadow: 0 6px 20px -10px var(--primary); }
+.msg-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; border-radius: var(--radius) 0 0 var(--radius); background: var(--border); }
+.msg-card.admin::before { background: linear-gradient(180deg, var(--primary), var(--info)); }
+.msg-card.pinned { border-color: #ffb020; background: linear-gradient(180deg, #ffb02014, transparent 55%); }
+.msg-card.pinned::before { background: linear-gradient(180deg, #ffd24a, #ffb020); }
+.msg-pin { display: inline-block; font-size: 11.5px; font-weight: 800; color: #1a1200; background: linear-gradient(135deg, #ffd24a, #ffb020); padding: 3px 11px; border-radius: 20px; margin-bottom: 11px; }
+.msg-top, .msg-reply { display: flex; gap: 11px; align-items: flex-start; }
+.msg-avatar { width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 16px; color: #fff; box-shadow: 0 3px 8px -3px rgba(0,0,0,.5); }
+.msg-reply .msg-avatar { width: 30px; height: 30px; font-size: 13px; border-radius: 9px; }
 .msg-body { flex: 1; min-width: 0; }
 .msg-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13.5px; }
 .msg-time { font-size: 12px; color: var(--text-dim); }
-.msg-role { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 20px; background: var(--bg-soft); color: var(--text-dim); }
-.msg-role.admin { background: #6c5ce733; color: var(--primary-soft); }
-.msg-content { margin-top: 4px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
-.msg-actions { display: flex; gap: 16px; margin-top: 10px; padding-left: 44px; }
-.msg-replies { margin: 10px 0 4px; padding: 10px 0 0 16px; border-top: 1px dashed var(--border); display: flex; flex-direction: column; gap: 12px; }
-.msg-replybox { display: flex; gap: 8px; margin-top: 10px; padding-left: 44px; }
+.msg-role { font-size: 10.5px; font-weight: 800; padding: 2px 9px; border-radius: 20px; background: var(--bg-soft); color: var(--text-dim); }
+.msg-role.admin { background: linear-gradient(135deg, var(--primary), var(--info)); color: #fff; }
+.msg-content { margin-top: 5px; font-size: 14.5px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+.msg-actions { display: flex; gap: 18px; margin-top: 12px; padding-left: 49px; }
+.msg-actions .btn-link.danger { color: var(--danger); }
+.msg-replies { margin: 12px 0 4px; padding: 12px 0 0 18px; border-top: 1px dashed var(--border); display: flex; flex-direction: column; gap: 13px; }
+.msg-replybox { display: flex; gap: 8px; margin-top: 12px; padding-left: 49px; align-items: center; }
 .msg-input { flex: 1; }
+
+/* Cảm xúc (reactions) */
+.react-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
+.react-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 700; padding: 3px 10px; border-radius: 20px; cursor: pointer; background: var(--bg-soft); border: 1px solid var(--border); color: var(--text); transition: transform .1s; }
+.react-chip:hover { transform: scale(1.06); }
+.react-chip.mine { background: #6c5ce728; border-color: var(--primary); color: var(--primary-soft); }
+.react-add { display: inline-flex; align-items: center; font-size: 14px; padding: 3px 8px; border-radius: 20px; cursor: pointer; background: transparent; border: 1px dashed var(--border); color: var(--text-dim); line-height: 1; }
+.react-add span { font-size: 12px; margin-left: 1px; }
+.react-add:hover { border-color: var(--primary); color: var(--primary-soft); }
+
+/* Bảng chọn emoji nổi */
+.emoji-panel { position: fixed; z-index: 200; display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; width: 280px; padding: 8px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 34px -10px rgba(0,0,0,.6); }
+.emoji-pick { font-size: 20px; line-height: 1; padding: 5px; background: transparent; border: none; border-radius: 8px; cursor: pointer; transition: background .12s, transform .1s; }
+.emoji-pick:hover { background: var(--card-hover); transform: scale(1.2); }
 @media (max-width: 640px) {
   .msg-actions, .msg-replybox { padding-left: 0; }
 }

@@ -410,8 +410,45 @@ function optimisticClaim(id, release) {
     .catch((e) => { toast(e.message, 'err'); renderKeys(); });
 }
 
-// ============ SẢNH CHÍNH (thông báo + hỏi đáp) ============
+// ============ SẢNH CHÍNH (thông báo + hỏi đáp + cảm xúc) ============
 let boardLast = null;
+const EMOJIS = ['😀','😁','😂','🤣','😊','😍','😎','😘','🤔','😅','😆','😉','🙂','😴','😭','😢','😡','🥳','😮','😱','👍','👎','👌','👏','🙏','💪','🤝','✌️','❤️','🔥','🎉','✨','⭐','💯','🚀','⚡','💡','✅','❌','📌','🎯','💰','📈','🎬','📱','🔑'];
+const QUICK_REACTS = ['👍','❤️','😂','🔥','🎉','🙏','😮','💯'];
+
+// Bảng emoji nổi (dùng chung): đặt con trỏ ở field nào thì chèn vào đó
+let _emojiAction = null, _emojiOwner = null;
+function ensureEmojiPanel() {
+  let p = document.getElementById('emoji-panel');
+  if (p) return p;
+  p = document.createElement('div');
+  p.id = 'emoji-panel'; p.className = 'emoji-panel'; p.style.display = 'none';
+  p.innerHTML = EMOJIS.map((e) => `<button type="button" class="emoji-pick">${e}</button>`).join('');
+  document.body.appendChild(p);
+  p.addEventListener('mousedown', (ev) => ev.preventDefault()); // giữ con trỏ ở ô nhập
+  p.addEventListener('click', (ev) => { const b = ev.target.closest('.emoji-pick'); if (b && _emojiAction) _emojiAction(b.textContent); });
+  document.addEventListener('click', (ev) => {
+    if (p.style.display === 'none') return;
+    if (ev.target.closest('#emoji-panel') || ev.target.closest('[data-emoji]') || ev.target.closest('[data-reactadd]')) return;
+    p.style.display = 'none';
+  });
+  window.addEventListener('hashchange', () => { p.style.display = 'none'; });
+  return p;
+}
+function insertAtCursor(field, text) {
+  const s = field.selectionStart ?? field.value.length, e = field.selectionEnd ?? field.value.length;
+  field.value = field.value.slice(0, s) + text + field.value.slice(e);
+  const pos = s + text.length; field.focus(); field.setSelectionRange(pos, pos);
+}
+function openEmoji(btn, action) {
+  const p = ensureEmojiPanel();
+  if (p.style.display !== 'none' && _emojiOwner === btn) { p.style.display = 'none'; return; }
+  _emojiAction = action; _emojiOwner = btn;
+  const r = btn.getBoundingClientRect();
+  p.style.display = 'grid';
+  const w = 280;
+  p.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left)) + 'px';
+  p.style.top = (r.bottom + 6 + p.offsetHeight > window.innerHeight ? r.top - p.offsetHeight - 6 : r.bottom + 6) + 'px';
+}
 
 async function renderBoard() {
   $('#topbar-right').innerHTML = '';
@@ -426,8 +463,14 @@ function drawBoard(posts) {
   const view = $('#view');
   const isAdmin = State.user.role === 'admin';
   const meId = State.user.id;
-  const avatar = (n) => `<div class="msg-avatar">${esc((n || '?').charAt(0).toUpperCase())}</div>`;
+  const avatar = (n) => { const h = hashHue(n || '?'); return `<div class="msg-avatar" style="background:linear-gradient(135deg,hsl(${h} 65% 55%),hsl(${(h + 45) % 360} 65% 45%))">${esc((n || '?').charAt(0).toUpperCase())}</div>`; };
   const roleBadge = (role) => role === 'admin' ? '<span class="msg-role admin">📢 Quản trị</span>' : '<span class="msg-role">Nhân sự</span>';
+
+  const reactBar = (m) => {
+    const chips = Object.entries(m.reactions || {}).filter(([, c]) => c > 0)
+      .map(([emo, c]) => `<button class="react-chip ${(m.myReactions || []).includes(emo) ? 'mine' : ''}" data-react="${m.id}" data-emoji="${emo}">${emo} ${c}</button>`).join('');
+    return `<div class="react-bar">${chips}<button class="react-add" data-reactadd="${m.id}" title="Thả cảm xúc">😊<span>+</span></button></div>`;
+  };
 
   const replyHtml = (r) => `<div class="msg-reply">
     ${avatar(r.user_name)}
@@ -435,36 +478,45 @@ function drawBoard(posts) {
       <div class="msg-head"><b>${esc(r.user_name || '?')}</b> ${roleBadge(r.role)} <span class="msg-time">${timeAgo(r.created_at)}</span>
         ${(isAdmin || r.user_id === meId) ? `<button class="btn-link" data-msgdel="${r.id}">xóa</button>` : ''}</div>
       <div class="msg-content">${esc(r.content)}</div>
+      ${reactBar(r)}
     </div></div>`;
 
-  const postHtml = (p) => `<div class="msg-card${p.pinned ? ' pinned' : ''}">
+  const postHtml = (p) => `<div class="msg-card${p.pinned ? ' pinned' : ''}${p.role === 'admin' ? ' admin' : ''}">
     ${p.pinned ? '<div class="msg-pin">📌 Thông báo đã ghim</div>' : ''}
     <div class="msg-top">${avatar(p.user_name)}
       <div class="msg-body">
         <div class="msg-head"><b>${esc(p.user_name || '?')}</b> ${roleBadge(p.role)} <span class="msg-time">${fmtDateTime(p.created_at)}</span></div>
         <div class="msg-content">${esc(p.content)}</div>
+        ${reactBar(p)}
       </div>
     </div>
     <div class="msg-actions">
       <button class="btn-link" data-msgreply="${p.id}">💬 Trả lời${p.replies.length ? ' (' + p.replies.length + ')' : ''}</button>
-      ${isAdmin ? `<button class="btn-link" data-msgpin="${p.id}">${p.pinned ? 'Bỏ ghim' : '📌 Ghim'}</button>` : ''}
-      ${(isAdmin || p.user_id === meId) ? `<button class="btn-link" data-msgdel="${p.id}">🗑️ Xóa</button>` : ''}
+      ${isAdmin ? `<button class="btn-link" data-msgpin="${p.id}">${p.pinned ? '📌 Bỏ ghim' : '📌 Ghim'}</button>` : ''}
+      ${(isAdmin || p.user_id === meId) ? `<button class="btn-link danger" data-msgdel="${p.id}">🗑️ Xóa</button>` : ''}
     </div>
     ${p.replies.length ? `<div class="msg-replies">${p.replies.map(replyHtml).join('')}</div>` : ''}
     <div class="msg-replybox" id="rb-${p.id}" style="display:none">
       <input class="msg-input" id="ri-${p.id}" placeholder="Viết trả lời…" autocomplete="off">
+      <button class="emoji-btn" data-emoji="ri-${p.id}" title="Chèn emoji">😊</button>
       <button class="btn btn-sm btn-primary" data-msgsend="${p.id}">Gửi</button>
     </div>
   </div>`;
 
   view.innerHTML = `
     <div class="panel msg-new">
-      <div class="panel-title">${isAdmin ? '📢 Đăng thông báo cho cả team' : '✍️ Gửi câu hỏi / thắc mắc cho admin'}</div>
-      <textarea id="msg-new" rows="3" placeholder="${isAdmin ? 'Viết thông báo cho cả team…' : 'Viết câu hỏi hoặc thắc mắc của bạn… admin sẽ trả lời ngay tại đây.'}"></textarea>
-      <div class="form-actions"><button class="btn btn-primary" id="msg-post">Đăng lên sảnh</button></div>
+      <div class="msg-new-head">${isAdmin ? '📢 Đăng thông báo cho cả team' : '✍️ Gửi câu hỏi / thắc mắc cho admin'}</div>
+      <div class="msg-compose">
+        <textarea id="msg-new" rows="3" placeholder="${isAdmin ? 'Viết thông báo cho cả team…' : 'Viết câu hỏi hoặc thắc mắc của bạn… admin sẽ trả lời ngay tại đây.'}"></textarea>
+        <button class="emoji-btn" data-emoji="msg-new" title="Chèn emoji">😊</button>
+      </div>
+      <div class="form-actions"><button class="btn btn-primary" id="msg-post">📨 Đăng lên sảnh</button></div>
     </div>
     ${posts.length ? `<div class="msg-feed">${posts.map(postHtml).join('')}</div>`
       : '<div class="empty"><div class="empty-icon">📢</div>Chưa có bài nào. Hãy đăng bài đầu tiên!</div>'}`;
+
+  // Nút emoji cho ô soạn + ô trả lời
+  view.querySelectorAll('[data-emoji]').forEach((b) => b.onclick = (e) => { e.preventDefault(); const f = $('#' + b.dataset.emoji); if (f) openEmoji(b, (emo) => insertAtCursor(f, emo)); });
 
   const postBtn = $('#msg-post');
   postBtn.onclick = async () => {
@@ -493,6 +545,31 @@ function drawBoard(posts) {
   view.querySelectorAll('[data-msgpin]').forEach((b) => b.onclick = async () => {
     try { await api('/messages/' + b.dataset.msgpin + '/pin', { method: 'POST', body: {} }); boardLast = null; renderBoard(); } catch (e) { toast(e.message, 'err'); }
   });
+  // Thả cảm xúc: bấm chip để bỏ/thêm, nút 😊+ mở bảng chọn nhanh
+  view.querySelectorAll('[data-react]').forEach((b) => b.onclick = () => doReact(b.dataset.react, b.dataset.emoji));
+  view.querySelectorAll('[data-reactadd]').forEach((b) => b.onclick = (e) => { e.preventDefault(); openEmoji(b, (emo) => { ensureEmojiPanel().style.display = 'none'; doReact(b.dataset.reactadd, emo); }); });
+}
+
+async function doReact(id, emoji) {
+  // cập nhật ngay tại chỗ rồi gửi server (mượt)
+  const apply = (list) => list && list.forEach((m) => {
+    if (m.id == id) toggleReactLocal(m, emoji);
+    if (m.replies) m.replies.forEach((r) => { if (r.id == id) toggleReactLocal(r, emoji); });
+  });
+  apply(boardLast); drawBoard(boardLast);
+  try { await api('/messages/' + id + '/react', { method: 'POST', body: { emoji } }); }
+  catch (e) { toast(e.message, 'err'); boardLast = null; renderBoard(); }
+}
+function toggleReactLocal(m, emoji) {
+  m.reactions = m.reactions || {}; m.myReactions = m.myReactions || [];
+  if (m.myReactions.includes(emoji)) {
+    m.myReactions = m.myReactions.filter((x) => x !== emoji);
+    m.reactions[emoji] = Math.max(0, (m.reactions[emoji] || 1) - 1);
+    if (!m.reactions[emoji]) delete m.reactions[emoji];
+  } else {
+    m.myReactions.push(emoji);
+    m.reactions[emoji] = (m.reactions[emoji] || 0) + 1;
+  }
 }
 
 // ============ KEYS ============

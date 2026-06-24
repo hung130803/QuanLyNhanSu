@@ -166,6 +166,19 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id);
 
+-- Thả cảm xúc (emoji) vào bài/câu trả lời ở sảnh chính
+CREATE TABLE IF NOT EXISTS message_reactions (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id INTEGER NOT NULL,
+  user_id    INTEGER NOT NULL,
+  emoji      TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (message_id, user_id, emoji),
+  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_reactions_msg ON message_reactions(message_id);
+
 CREATE INDEX IF NOT EXISTS idx_videologs_date ON video_logs(log_date);
 CREATE INDEX IF NOT EXISTS idx_videologs_user ON video_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_keys_status ON keys(status);

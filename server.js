@@ -959,14 +959,36 @@ app.delete('/api/report/:id', auth, (req, res) => {
   res.json({ ok: true });
 });
 
-// ============ SẢNH CHÍNH (thông báo + hỏi đáp) ============
+// ============ SẢNH CHÍNH (thông báo + hỏi đáp + cảm xúc) ============
 app.get('/api/messages', auth, (req, res) => {
   const all = db.prepare('SELECT * FROM messages ORDER BY created_at ASC').all();
+  // Gom cảm xúc cho mọi tin nhắn: { emoji: count } và mảng emoji của chính mình
+  const reactRows = db.prepare('SELECT message_id, emoji, user_id FROM message_reactions').all();
+  const reMap = {}; // message_id -> { emoji: count }
+  const mine = {};  // message_id -> [emoji của mình]
+  reactRows.forEach((r) => {
+    (reMap[r.message_id] = reMap[r.message_id] || {});
+    reMap[r.message_id][r.emoji] = (reMap[r.message_id][r.emoji] || 0) + 1;
+    if (r.user_id === req.user.id) (mine[r.message_id] = mine[r.message_id] || []).push(r.emoji);
+  });
+  const attach = (m) => ({ ...m, reactions: reMap[m.id] || {}, myReactions: mine[m.id] || [] });
   const byParent = {};
-  all.filter((m) => m.parent_id).forEach((r) => { (byParent[r.parent_id] = byParent[r.parent_id] || []).push(r); });
-  const tops = all.filter((m) => !m.parent_id).map((t) => ({ ...t, replies: byParent[t.id] || [] }));
+  all.filter((m) => m.parent_id).forEach((r) => { (byParent[r.parent_id] = byParent[r.parent_id] || []).push(attach(r)); });
+  const tops = all.filter((m) => !m.parent_id).map((t) => ({ ...attach(t), replies: byParent[t.id] || [] }));
   tops.sort((a, b) => (b.pinned - a.pinned) || (b.created_at < a.created_at ? -1 : 1)); // ghim lên đầu, mới nhất trước
   res.json(tops);
+});
+
+// Thả / bỏ cảm xúc (bấm lần nữa cùng emoji là bỏ)
+app.post('/api/messages/:id/react', auth, (req, res) => {
+  const emoji = (req.body && req.body.emoji || '').toString().slice(0, 8);
+  if (!emoji) return res.status(400).json({ error: 'Thiếu emoji' });
+  const m = db.prepare('SELECT id FROM messages WHERE id=?').get(req.params.id);
+  if (!m) return res.status(404).json({ error: 'Không tìm thấy' });
+  const ex = db.prepare('SELECT id FROM message_reactions WHERE message_id=? AND user_id=? AND emoji=?').get(m.id, req.user.id, emoji);
+  if (ex) db.prepare('DELETE FROM message_reactions WHERE id=?').run(ex.id);
+  else db.prepare('INSERT INTO message_reactions (message_id, user_id, emoji) VALUES (?,?,?)').run(m.id, req.user.id, emoji);
+  res.json({ ok: true, active: !ex });
 });
 
 app.post('/api/messages', auth, (req, res) => {
