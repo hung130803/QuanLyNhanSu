@@ -128,7 +128,7 @@ const countryName = (cc) => { const f = REWARD_COUNTRIES.find(([c]) => c === cc)
 const hashHue = (s) => { let h = 0; for (const c of String(s || '')) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 360; };
 const chipStyle = (s) => { const h = hashHue(s); return `background:hsl(${h} 42% 19%);color:hsl(${h} 88% 74%);border:1px solid hsl(${h} 45% 30%)`; };
 const QUALITY_CLS = { ngon: 'q-ngon', tot: 'q-tot', thuong: 'q-thuong' };
-const QUALITY = { ngon: 'Ngon 🔥', tot: 'Tốt', thuong: 'Thường' };
+const QUALITY = { ngon: '🔥 Ngon', tot: '👍 Tốt', thuong: '◽ Thường' };
 
 // ============ AUTH ============
 async function doLogin(e) {
@@ -239,6 +239,9 @@ async function renderDashboard() {
   } catch (e) { view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
   keysCache = keys;
   const unassigned = keys.filter((k) => !k.worker_count);
+  // Key Ngon lên đầu để nhân viên nhặt key tốt trước
+  const qRankD = { ngon: 0, tot: 1, thuong: 2 };
+  unassigned.sort((a, b) => (qRankD[a.quality] ?? 3) - (qRankD[b.quality] ?? 3));
 
   let kpis = `
     <div class="kpi clickable" data-go="keys-all"><div class="kpi-icon">🔑</div><div class="kpi-label">Tổng số Key</div><div class="kpi-value">${fmtNum(s.totalKeys)}</div><div class="kpi-sub">chưa ai làm: ${fmtNum(s.keysUnassigned)} →</div></div>
@@ -268,11 +271,17 @@ async function renderDashboard() {
         </div>`).join('')}
     </div>`).join('') : '<div class="empty" style="padding:30px 10px">Chưa ai nhận key nào.</div>';
 
-  const unassignedHtml = unassigned.length ? unassigned.slice(0, 20).map((k) => `
-    <div class="ua-item">
-      <span class="uc-cn">${esc(k.channel_name)}${k.quality ? ' <span class="quality-tag">' + esc(QUALITY[k.quality] || k.quality) + '</span>' : ''}</span>
-      <button class="btn btn-sm btn-primary" data-claim="${k.id}">✋ Nhận làm</button>
-    </div>`).join('') + (unassigned.length > 20 ? `<div class="hint">…và ${unassigned.length - 20} key khác (xem ở mục Key YouTube)</div>` : '')
+  const UA_CAP = 80;
+  const unassignedHtml = unassigned.length ? `
+    ${unassigned.length > 8 ? '<input class="search ua-search" id="ua-search" placeholder="🔍 Tìm nhanh key chưa làm…">' : ''}
+    <div class="scroll-list" id="ua-list">
+      ${unassigned.slice(0, UA_CAP).map((k) => `
+        <div class="ua-item" data-name="${esc((k.channel_name || '').toLowerCase())}">
+          <span class="uc-cn">${esc(k.channel_name)}${k.quality ? ' <span class="quality-tag ' + (QUALITY_CLS[k.quality] || '') + '">' + esc(QUALITY[k.quality] || k.quality) + '</span>' : ''}${k.country ? ' <span class="country-tag" style="' + chipStyle(k.country) + '">' + flag(k.country) + '</span>' : ''}</span>
+          <button class="btn btn-sm btn-primary" data-claim="${k.id}">✋ Nhận làm</button>
+        </div>`).join('')}
+    </div>
+    ${unassigned.length > UA_CAP ? `<div class="hint">Hiển thị ${UA_CAP} key đầu. <a class="btn-link" data-go="keys-unassigned">Xem tất cả ${unassigned.length} key chưa làm →</a></div>` : ''}`
     : '<div class="empty" style="padding:30px 10px">Mọi key đều đã có người làm 👍</div>';
 
   const byUser = s.tiktokByUser || [];
@@ -293,7 +302,7 @@ async function renderDashboard() {
     <div class="grid-2">
       <div class="panel">
         <div class="panel-title">✅ Key đã có người làm</div>
-        ${claimedHtml}
+        <div class="scroll-list">${claimedHtml}</div>
       </div>
       <div class="panel">
         <div class="panel-title">⚪ Key chưa ai làm ${unassigned.length ? `<span class="count">${unassigned.length}</span>` : ''}</div>
@@ -307,11 +316,20 @@ async function renderDashboard() {
 
   view.querySelectorAll('[data-go]').forEach((c) => c.onclick = () => {
     const go = c.dataset.go;
-    if (go === 'keys-all') { keysOwner = 'all'; keysFilter = 'all'; navigate('keys'); }
-    else if (go === 'keys-mine') { keysOwner = 'mine'; keysFilter = 'all'; navigate('keys'); }
+    if (go === 'keys-all') { keysOwner = 'all'; keysFilter = 'all'; keysPage = 1; navigate('keys'); }
+    else if (go === 'keys-mine') { keysOwner = 'mine'; keysFilter = 'all'; keysPage = 1; navigate('keys'); }
+    else if (go === 'keys-unassigned') { keysOwner = 'unassigned'; keysFilter = 'all'; keysPage = 1; navigate('keys'); }
     else if (go === 'tiktok') navigate('tiktok');
     else if (go === 'finance') navigate('finance');
   });
+  // Tìm nhanh trong danh sách key chưa làm (ẩn/hiện ngay, không tải lại)
+  const uaSearch = $('#ua-search');
+  if (uaSearch) uaSearch.oninput = () => {
+    const q = uaSearch.value.trim().toLowerCase();
+    $('#ua-list').querySelectorAll('.ua-item').forEach((it) => {
+      it.style.display = !q || it.dataset.name.includes(q) ? '' : 'none';
+    });
+  };
   view.querySelectorAll('[data-keygo]').forEach((b) => b.onclick = () => { const k = keys.find((x) => x.id == b.dataset.keygo); if (k) keyDetail(k); });
   view.querySelectorAll('[data-ttgo]').forEach((b) => b.onclick = async () => {
     try { if (!tiktokCache.length) tiktokCache = await api('/tiktok'); const t = tiktokCache.find((x) => x.id == b.dataset.ttgo); if (t) tiktokDetail(t); } catch (_) {}
@@ -352,6 +370,28 @@ let keysSearch = '';
 let keysOwner = 'all'; // all | mine | unassigned | <userId>
 let keysCountry = 'all';
 let keysSelected = new Set();
+let keysPage = 1;
+const PAGE_SIZE = 30;
+
+// Tạo thanh phân trang dùng chung (trả về HTML + hàm gắn sự kiện)
+function pagerHtml(page, totalItems, pageSize) {
+  const pages = Math.max(1, Math.ceil(totalItems / pageSize));
+  if (totalItems <= pageSize) return { html: '', pages: 1 };
+  const from = (page - 1) * pageSize + 1, to = Math.min(page * pageSize, totalItems);
+  return {
+    pages,
+    html: `<div class="pager">
+      <span class="pager-info">Hiển thị <b>${from}–${to}</b> trong <b>${totalItems}</b></span>
+      <div class="pager-btns">
+        <button class="btn btn-sm btn-ghost" data-pg="first" ${page <= 1 ? 'disabled' : ''}>« Đầu</button>
+        <button class="btn btn-sm btn-ghost" data-pg="prev" ${page <= 1 ? 'disabled' : ''}>‹ Trước</button>
+        <span class="pager-cur">Trang ${page}/${pages}</span>
+        <button class="btn btn-sm btn-ghost" data-pg="next" ${page >= pages ? 'disabled' : ''}>Sau ›</button>
+        <button class="btn btn-sm btn-ghost" data-pg="last" ${page >= pages ? 'disabled' : ''}>Cuối »</button>
+      </div>
+    </div>`,
+  };
+}
 
 async function renderKeys() {
   $('#topbar-right').innerHTML = '';
@@ -402,15 +442,25 @@ function drawKeys() {
     const q = keysSearch.toLowerCase();
     list = list.filter((k) => (k.channel_name || '').toLowerCase().includes(q) || (k.url || '').toLowerCase().includes(q));
   }
+  // Sắp xếp: key Ngon lên đầu, rồi Tốt, rồi còn lại — để key ngon luôn dễ thấy
+  const qRank = { ngon: 0, tot: 1, thuong: 2 };
+  list.sort((a, b) => (qRank[a.quality] ?? 3) - (qRank[b.quality] ?? 3));
 
-  const rows = list.map((k) => {
+  // Phân trang (kẹp số trang trước khi dựng thanh điều hướng)
+  const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+  if (keysPage > totalPages) keysPage = totalPages;
+  if (keysPage < 1) keysPage = 1;
+  const pg = pagerHtml(keysPage, list.length, PAGE_SIZE);
+  const pageList = list.slice((keysPage - 1) * PAGE_SIZE, keysPage * PAGE_SIZE);
+
+  const rows = pageList.map((k) => {
     const st = STATUS[k.status] || STATUS.todo;
     const thumb = k.thumbnail ? `<img class="cell-thumb" src="${esc(k.thumbnail)}" onerror="this.style.visibility='hidden'">` : `<div class="cell-thumb"></div>`;
     const subInfo = [];
     if (k.country) subInfo.push(`<span class="country-tag" style="${chipStyle(k.country)}">${flag(k.country)} ${esc(countryName(k.country) || k.country)}</span>`);
     if (k.quality) subInfo.push(`<span class="quality-tag ${QUALITY_CLS[k.quality] || ''}">${esc(QUALITY[k.quality] || k.quality)}</span>`);
     if (k.subscribers) subInfo.push(`<span class="ch-sub-tag">👥 ${esc(k.subscribers)}</span>`);
-    return `<tr>
+    return `<tr class="${k.quality === 'ngon' ? 'row-ngon' : ''}">
       <td class="chk-col"><input type="checkbox" class="k-row-chk" value="${k.id}" ${keysSelected.has(k.id) ? 'checked' : ''}></td>
       <td class="cat-cell">${k.category ? `<span class="cat-tag" style="${chipStyle(k.category)}">${esc(k.category)}</span>` : '<span class="muted">—</span>'}</td>
       <td><div class="cell-channel">${thumb}<div>
@@ -447,15 +497,20 @@ function drawKeys() {
     </div>
     <div class="filter-tabs">${tabsHtml}</div>
     ${list.length ? `<div class="table-wrap"><table>
-      <thead><tr><th class="chk-col"><input type="checkbox" id="k-checkall" title="Chọn tất cả"></th><th class="cat-cell">Chủ đề</th><th>Kênh / Key</th><th>Trạng thái</th><th>Người làm</th><th>Người thêm</th><th></th></tr></thead>
-      <tbody>${rows}</tbody></table></div>`
-      : '<div class="empty"><div class="empty-icon">🔑</div>Chưa có key nào. Bấm "Thêm Key" để bắt đầu.</div>'}`;
+      <thead><tr><th class="chk-col"><input type="checkbox" id="k-checkall" title="Chọn tất cả (trang này)"></th><th class="cat-cell">Chủ đề</th><th>Kênh / Key</th><th>Trạng thái</th><th>Người làm</th><th>Người thêm</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>${pg.html}`
+      : '<div class="empty"><div class="empty-icon">🔑</div>Không có key nào khớp bộ lọc.</div>'}`;
 
-  view.querySelectorAll('.filter-tab').forEach((t) => t.onclick = () => { keysFilter = t.dataset.f; drawKeys(); });
-  $('#key-owner').onchange = (e) => { keysOwner = e.target.value; drawKeys(); };
-  $('#key-country').onchange = (e) => { keysCountry = e.target.value; drawKeys(); };
+  view.querySelectorAll('.filter-tab').forEach((t) => t.onclick = () => { keysFilter = t.dataset.f; keysPage = 1; drawKeys(); });
+  $('#key-owner').onchange = (e) => { keysOwner = e.target.value; keysPage = 1; drawKeys(); };
+  $('#key-country').onchange = (e) => { keysCountry = e.target.value; keysPage = 1; drawKeys(); };
   const search = $('#key-search');
-  search.oninput = () => { keysSearch = search.value; const pos = search.selectionStart; drawKeys(); const ns = $('#key-search'); ns.focus(); ns.setSelectionRange(pos, pos); };
+  search.oninput = () => { keysSearch = search.value; keysPage = 1; const pos = search.selectionStart; drawKeys(); const ns = $('#key-search'); ns.focus(); ns.setSelectionRange(pos, pos); };
+  view.querySelectorAll('[data-pg]').forEach((b) => b.onclick = () => {
+    const a = b.dataset.pg;
+    if (a === 'first') keysPage = 1; else if (a === 'prev') keysPage--; else if (a === 'next') keysPage++; else if (a === 'last') keysPage = pg.pages;
+    drawKeys(); window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
   view.querySelectorAll('[data-info]').forEach((b) => b.onclick = () => { const k = keysCache.find((x) => x.id == b.dataset.info); keyDetail(k); });
   view.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => { const k = keysCache.find((x) => x.id == b.dataset.edit); keyForm(k); });
   view.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => delKey(b.dataset.del));
@@ -546,8 +601,8 @@ function keyForm(key = null) {
         </select>
       </div>
       <div class="form-row">
-        <label>Quốc gia (nước kiếm tiền)</label>
-        <select id="k-country">
+        <label>Quốc gia (nước kiếm tiền) <span class="req">* bắt buộc</span></label>
+        <select id="k-country" required>
           <option value="">— chọn nước —</option>
           ${REWARD_COUNTRIES.map(([c, n]) => `<option value="${c}" ${key && key.country === c ? 'selected' : ''}>${flag(c)} ${n} (${c})</option>`).join('')}
           ${key && key.country && !REWARD_COUNTRIES.some(([c]) => c === key.country) ? `<option value="${esc(key.country)}" selected>${flag(key.country)} ${esc(key.country)}</option>` : ''}
@@ -616,6 +671,7 @@ function keyForm(key = null) {
     };
     if (!body.category) return toast('Vui lòng nhập chủ đề key', 'err');
     if (!body.url) return toast('Thiếu link kênh', 'err');
+    if (!body.country) return toast('Vui lòng chọn quốc gia (nước kiếm tiền)', 'err');
     const unlock = lockBtn(form);
     try {
       if (isEdit) { await api('/keys/' + key.id, { method: 'PUT', body }); toast('Đã cập nhật key'); }
@@ -653,8 +709,8 @@ function bulkKeyForm() {
       <input id="bk-category" placeholder="vd: nhạc, gym… (áp cho tất cả link)" required>
     </div>
     <div class="form-row">
-      <label>Quốc gia chung (tùy chọn)</label>
-      <select id="bk-country"><option value="">— không đặt —</option>${REWARD_COUNTRIES.map(([c, n]) => `<option value="${c}">${flag(c)} ${n} (${c})</option>`).join('')}</select>
+      <label>Quốc gia chung (áp cho tất cả link) <span class="req">* bắt buộc</span></label>
+      <select id="bk-country" required><option value="">— chọn nước —</option>${REWARD_COUNTRIES.map(([c, n]) => `<option value="${c}">${flag(c)} ${n} (${c})</option>`).join('')}</select>
     </div>
     <div class="form-row">
       <label>Dán link kênh YouTube — mỗi dòng 1 link</label>
@@ -667,6 +723,7 @@ function bulkKeyForm() {
     e.preventDefault();
     const body = { category: form.querySelector('#bk-category').value.trim(), country: form.querySelector('#bk-country').value, urls: form.querySelector('#bk-urls').value };
     if (!body.category) return toast('Nhập chủ đề chung', 'err');
+    if (!body.country) return toast('Vui lòng chọn quốc gia chung', 'err');
     if (!body.urls.trim()) return toast('Dán ít nhất 1 link', 'err');
     const unlock = lockBtn(form);
     try {
@@ -686,6 +743,9 @@ let ttSort = 'recent';
 let ttPerson = '';
 let ttCountry = 'all';
 let ttSelected = new Set();
+let ttCollapsed = null;        // Set mã nước đang thu gọn (null = chưa khởi tạo)
+let ttFullGroups = new Set();  // nhóm đã bấm "xem thêm" để hiện hết
+const TT_GROUP_CAP = 50;       // mỗi nhóm nước hiện tối đa bao nhiêu kênh trước khi "xem thêm"
 
 // Huy hiệu tình trạng kiếm tiền
 function monetizeChips(t) {
@@ -788,12 +848,23 @@ function drawTiktok() {
   list.forEach((t) => { const k = t.country || ''; (groups[k] = groups[k] || []).push(t); });
   const groupKeys = Object.keys(groups).sort((a, b) => (!a ? 1 : !b ? -1 : groups[b].length - groups[a].length));
 
+  // Lần đầu: nếu nhiều kênh thì thu gọn sẵn các nhóm cho gọn gàng
+  if (ttCollapsed === null) ttCollapsed = new Set(list.length > 80 ? groupKeys : []);
+  // Khi đang tìm kiếm / lọc 1 nước cụ thể thì luôn mở để thấy kết quả
+  const forceExpand = ttCountry !== 'all' || !!ttSearch;
+
   const groupedHtml = groupKeys.map((cc) => {
     const items = groups[cc];
     const gf = items.reduce((a, b) => a + b.followers, 0);
     const gl = items.reduce((a, b) => a + b.likes, 0);
-    return `<div class="country-group">
-      <div class="country-head">
+    const collapsed = !forceExpand && ttCollapsed.has(cc);
+    const showAll = forceExpand || ttFullGroups.has(cc) || items.length <= TT_GROUP_CAP;
+    const shown = showAll ? items : items.slice(0, TT_GROUP_CAP);
+    const moreBtn = (!collapsed && !showAll)
+      ? `<div class="grp-more"><button class="btn btn-sm btn-ghost" data-grpmore="${esc(cc)}">▾ Xem thêm ${items.length - TT_GROUP_CAP} kênh</button></div>` : '';
+    return `<div class="country-group${collapsed ? ' is-collapsed' : ''}">
+      <div class="country-head" data-grptoggle="${esc(cc)}">
+        <span class="grp-caret">${collapsed ? '▸' : '▾'}</span>
         <input type="checkbox" class="tt-grp-check" title="Chọn cả nhóm này">
         <span class="country-flag">${flag(cc)}</span>
         <span class="country-name">${esc(countryName(cc))}</span>
@@ -802,9 +873,15 @@ function drawTiktok() {
         <span class="country-stat">👥 ${fmtCompact(gf)}</span>
         <span class="country-stat">❤️ ${fmtCompact(gl)}</span>
       </div>
-      <div class="table-wrap country-table"><table>${thead}<tbody>${items.map((t, i) => rowHtml(t, i)).join('')}</tbody></table></div>
+      ${collapsed ? '' : `<div class="table-wrap country-table"><table>${thead}<tbody>${shown.map((t, i) => rowHtml(t, i)).join('')}</tbody></table></div>${moreBtn}`}
     </div>`;
   }).join('');
+
+  // Nút gập/mở tất cả (chỉ hữu ích khi có nhiều nhóm)
+  const allCollapsed = groupKeys.length > 0 && groupKeys.every((cc) => ttCollapsed.has(cc));
+  const collapseBar = (!forceExpand && groupKeys.length > 1)
+    ? `<div class="collapse-bar"><button class="btn btn-sm btn-ghost" id="tt-toggle-all">${allCollapsed ? '▾ Mở tất cả nhóm' : '▸ Thu gọn tất cả nhóm'}</button><span class="muted">${list.length} kênh • ${groupKeys.length} nước</span></div>`
+    : '';
 
   view.innerHTML = `
     <div class="toolbar">
@@ -822,14 +899,28 @@ function drawTiktok() {
       </select>
       ${isAdmin ? `<select id="tt-person"><option value="">👥 Tất cả người</option>${personOptions}</select>` : ''}
     </div>
-    ${list.length ? groupedHtml
-      : '<div class="empty"><div class="empty-icon">📱</div>Chưa có kênh TikTok nào. Bấm "Thêm kênh TikTok" để bắt đầu.</div>'}`;
+    ${list.length ? collapseBar + groupedHtml
+      : '<div class="empty"><div class="empty-icon">📱</div>Chưa có kênh nào khớp bộ lọc.</div>'}`;
 
   const search = $('#tt-search');
   search.oninput = () => { ttSearch = search.value; const p = search.selectionStart; drawTiktok(); const ns = $('#tt-search'); ns.focus(); ns.setSelectionRange(p, p); };
   $('#tt-sort').onchange = (e) => { ttSort = e.target.value; drawTiktok(); };
   $('#tt-country').onchange = (e) => { ttCountry = e.target.value; drawTiktok(); };
   if ($('#tt-person')) $('#tt-person').onchange = (e) => { ttPerson = e.target.value; drawTiktok(); };
+  // Gập / mở từng nhóm nước
+  view.querySelectorAll('[data-grptoggle]').forEach((h) => h.onclick = (e) => {
+    if (e.target.closest('input, .tt-grp-check')) return; // bấm ô tick thì không gập
+    const cc = h.dataset.grptoggle;
+    if (ttCollapsed.has(cc)) ttCollapsed.delete(cc); else ttCollapsed.add(cc);
+    drawTiktok();
+  });
+  view.querySelectorAll('[data-grpmore]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); ttFullGroups.add(b.dataset.grpmore); drawTiktok(); });
+  const togAll = $('#tt-toggle-all');
+  if (togAll) togAll.onclick = () => {
+    const everyCollapsed = groupKeys.every((cc) => ttCollapsed.has(cc));
+    if (everyCollapsed) ttCollapsed.clear(); else groupKeys.forEach((cc) => ttCollapsed.add(cc));
+    drawTiktok();
+  };
   view.querySelectorAll('[data-ttsync]').forEach((b) => b.onclick = () => syncTiktok(b.dataset.ttsync));
   view.querySelectorAll('[data-ttinfo]').forEach((b) => b.onclick = () => { const t = tiktokCache.find((x) => x.id == b.dataset.ttinfo); tiktokDetail(t); });
   view.querySelectorAll('[data-ttedit]').forEach((b) => b.onclick = () => { const t = tiktokCache.find((x) => x.id == b.dataset.ttedit); tiktokForm(t); });
@@ -920,7 +1011,7 @@ function tiktokForm(ch = null) {
     </div>
     ${isEdit ? `<div class="form-row"><label>Tên kênh</label><input id="tt-name" value="${esc(ch.name || '')}"></div>` : ''}
     <div class="form-grid">
-      <div class="form-row"><label>Quốc gia (Creator Rewards)</label><select id="tt-country">${countryOpts}</select></div>
+      <div class="form-row"><label>Quốc gia (Creator Rewards) <span class="req">* bắt buộc</span></label><select id="tt-country" required>${countryOpts}</select></div>
       <div class="form-row"><label>Trạng thái</label><select id="tt-status">${statusOptions}</select></div>
     </div>
     <div class="form-row">
@@ -1010,6 +1101,7 @@ function tiktokForm(ch = null) {
       note: form.querySelector('#tt-note').value.trim(),
     };
     if (!body.url) return toast('Thiếu link/ID kênh', 'err');
+    if (!body.country) return toast('Vui lòng chọn quốc gia (Creator Rewards)', 'err');
     const unlock = lockBtn(form);
     try {
       if (isEdit) { await api('/tiktok/' + ch.id, { method: 'PUT', body }); toast('Đã cập nhật'); }
@@ -1099,7 +1191,7 @@ function bulkTiktokForm() {
   const statusOptions = Object.entries(TT_STATUS).map(([v, o]) => `<option value="${v}">${o.label}</option>`).join('');
   const form = el(`<form>
     <div class="form-grid">
-      <div class="form-row"><label>Quốc gia chung (tùy chọn)</label><select id="btt-country"><option value="">— không đặt —</option>${REWARD_COUNTRIES.map(([c, n]) => `<option value="${c}">${flag(c)} ${n}</option>`).join('')}</select></div>
+      <div class="form-row"><label>Quốc gia chung <span class="req">* bắt buộc</span></label><select id="btt-country" required><option value="">— chọn nước —</option>${REWARD_COUNTRIES.map(([c, n]) => `<option value="${c}">${flag(c)} ${n}</option>`).join('')}</select></div>
       <div class="form-row"><label>Trạng thái chung</label><select id="btt-status">${statusOptions}</select></div>
     </div>
     <div class="form-row">
@@ -1112,6 +1204,7 @@ function bulkTiktokForm() {
   form.onsubmit = async (e) => {
     e.preventDefault();
     const body = { country: form.querySelector('#btt-country').value, status: form.querySelector('#btt-status').value, urls: form.querySelector('#btt-urls').value };
+    if (!body.country) return toast('Vui lòng chọn quốc gia chung', 'err');
     if (!body.urls.trim()) return toast('Dán ít nhất 1 link', 'err');
     const unlock = lockBtn(form);
     try {

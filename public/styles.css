@@ -233,7 +233,7 @@ tbody tr:hover { background: var(--card-hover); }
 .badge.staff { background: #00d2a822; color: #3ee0bb; }
 .badge.dot::before { content: '●'; font-size: 9px; }
 
-.quality-tag { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: var(--bg-soft); color: var(--text-dim); }
+.quality-tag { font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 7px; background: var(--bg-soft); color: var(--text-dim); white-space: nowrap; }
 .cat-tag { display: inline-block; font-size: 12px; font-weight: 700; padding: 4px 11px; border-radius: 8px; background: #6c5ce722; color: var(--primary-soft); text-transform: capitalize; white-space: normal; overflow-wrap: break-word; word-break: normal; max-width: 200px; line-height: 1.35; vertical-align: top; }
 .cat-cell { min-width: 150px; width: 170px; }
 .chk-col { width: 40px; text-align: center; }
@@ -298,7 +298,12 @@ tbody tr:hover { background: var(--card-hover); }
 
 /* Gom kênh TikTok theo quốc gia */
 .country-group { margin-bottom: 20px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
-.country-head { display: flex; align-items: center; gap: 12px; padding: 13px 18px; background: linear-gradient(90deg, #6c5ce71f, transparent); border-bottom: 1px solid var(--border); }
+.country-head { display: flex; align-items: center; gap: 12px; padding: 13px 18px; background: linear-gradient(90deg, #6c5ce71f, transparent); border-bottom: 1px solid var(--border); cursor: pointer; -webkit-user-select: none; user-select: none; }
+.country-head:hover { background: linear-gradient(90deg, #6c5ce733, transparent); }
+.country-group.is-collapsed .country-head { border-bottom: none; }
+.grp-caret { font-size: 13px; color: var(--text-dim); width: 14px; }
+.grp-more { padding: 10px 18px; text-align: center; border-top: 1px solid var(--border); }
+.collapse-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
 .country-flag { font-size: 26px; line-height: 1; }
 .country-name { font-size: 16px; font-weight: 800; }
 .country-count { font-size: 12px; font-weight: 700; background: var(--primary); color: #fff; padding: 2px 10px; border-radius: 20px; }
@@ -315,6 +320,11 @@ tbody tr:hover { background: var(--card-hover); }
 /* Dashboard: key chưa ai làm */
 .ua-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); }
 .ua-item:last-child { border-bottom: none; }
+.ua-search { width: 100%; max-width: 100%; margin-bottom: 8px; }
+/* Hộp cuộn: danh sách dài chỉ cuộn trong khung, không kéo dài cả trang */
+.scroll-list { max-height: 460px; overflow-y: auto; padding-right: 4px; }
+.scroll-list::-webkit-scrollbar { width: 8px; }
+.scroll-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
 
 .working-by { font-weight: 500; }
 .btn-link { background: none; border: none; color: var(--info); font-size: 12px; cursor: pointer; padding: 0; text-decoration: underline; }
@@ -333,6 +343,13 @@ td.stt { color: var(--text-dim); font-weight: 700; text-align: center; width: 36
 .filter-tab:hover { background: var(--card-hover); color: var(--text); }
 .filter-tab.active { background: var(--primary); border-color: var(--primary); color: #fff; }
 .filter-tab .count { background: rgba(255,255,255,.15); padding: 1px 8px; border-radius: 10px; font-size: 12px; }
+
+/* ============ PHÂN TRANG ============ */
+.pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 6px 2px; flex-wrap: wrap; }
+.pager-info { font-size: 13px; color: var(--text-dim); }
+.pager-btns { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pager-cur { font-size: 13px; font-weight: 700; padding: 0 6px; white-space: nowrap; }
+.pager .btn[disabled] { opacity: .4; cursor: default; }
 
 /* ============ MODAL ============ */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; backdrop-filter: blur(3px); }
@@ -383,10 +400,13 @@ td.stt { color: var(--text-dim); font-weight: 700; text-align: center; width: 36
    ============================================================ */
 /* Nước trong key + chấm online */
 .country-tag { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: #46a6ff1a; color: #8cc6ff; font-weight: 600; }
-/* Màu phân loại chất lượng key */
-.quality-tag.q-ngon { background: #ff5d7a26; color: #ff96aa; box-shadow: inset 0 0 0 1px #ff5d7a44; }
-.quality-tag.q-tot { background: #19d3a226; color: #5fe6c4; box-shadow: inset 0 0 0 1px #19d3a244; }
-.quality-tag.q-thuong { background: #8a93a322; color: #aeb6c4; }
+/* Màu phân loại chất lượng key — mỗi loại 1 màu rõ ràng, dễ phân biệt */
+.quality-tag.q-ngon { background: linear-gradient(135deg, #ff5d7a33, #ff8a5b33); color: #ff9bac; box-shadow: inset 0 0 0 1.5px #ff5d7a66; }
+.quality-tag.q-tot { background: #19d3a226; color: #5fe6c4; box-shadow: inset 0 0 0 1.5px #19d3a255; }
+.quality-tag.q-thuong { background: #8a93a322; color: #c2cad6; box-shadow: inset 0 0 0 1.5px #8a93a355; }
+/* Dòng key "Ngon" được tô viền trái nổi bật để dễ thấy key ngon ngay */
+tr.row-ngon td:first-child { box-shadow: inset 3px 0 0 0 #ff5d7a; }
+tr.row-ngon { background: #ff5d7a0a; }
 .user-avatar.is-online { position: relative; }
 .user-avatar.is-online::after { content: ''; position: absolute; right: -2px; bottom: -2px; width: 11px; height: 11px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg-soft); box-shadow: 0 0 8px var(--accent); }
 

@@ -398,6 +398,7 @@ app.post('/api/keys', auth, async (req, res) => {
   } = req.body || {};
   if (!url) return res.status(400).json({ error: 'Thiếu link kênh' });
   if (!category || !String(category).trim()) return res.status(400).json({ error: 'Vui lòng nhập chủ đề key' });
+  if (!country || !String(country).trim()) return res.status(400).json({ error: 'Vui lòng chọn quốc gia (nước kiếm tiền)' });
   // CHỐNG TRÙNG: so link đã chuẩn hóa với các key hiện có
   const norm = normalizeUrl(url);
   const allKeys = db.prepare(keyWithNames + ' WHERE k.deleted_at IS NULL').all();
@@ -486,6 +487,7 @@ app.post('/api/keys/:id/claim', auth, (req, res) => {
 app.post('/api/keys/bulk', auth, (req, res) => {
   const { urls, category, country } = req.body || {};
   if (!category || !String(category).trim()) return res.status(400).json({ error: 'Vui lòng nhập chủ đề cho cả nhóm' });
+  if (!country || !String(country).trim()) return res.status(400).json({ error: 'Vui lòng chọn quốc gia chung' });
   const list = (Array.isArray(urls) ? urls : String(urls || '').split(/\r?\n/)).map((s) => String(s).trim()).filter(Boolean);
   if (!list.length) return res.status(400).json({ error: 'Chưa dán link nào' });
   const existNorms = new Set(db.prepare('SELECT url FROM keys WHERE deleted_at IS NULL').all().map((k) => normalizeUrl(k.url)));
@@ -615,6 +617,7 @@ app.post('/api/tiktok', auth, async (req, res) => {
   let { url, name, tiktok_id, country, status, source_key_id, assigned_to, note, total_views,
         avatar, bio, followers, likes, video_count, monetized, paypal_added, verified } = req.body || {};
   if (!url) return res.status(400).json({ error: 'Thiếu link/ID TikTok' });
+  if (!country || !String(country).trim()) return res.status(400).json({ error: 'Vui lòng chọn quốc gia (Creator Rewards)' });
   url = toTiktokUrl(url);
   const norm = normalizeUrl(url);
   const all = db.prepare(tiktokWithNames + ' WHERE t.deleted_at IS NULL').all();
@@ -645,6 +648,7 @@ app.post('/api/tiktok', auth, async (req, res) => {
 // Thêm HÀNG LOẠT kênh TikTok
 app.post('/api/tiktok/bulk', auth, (req, res) => {
   const { urls, country, status } = req.body || {};
+  if (!country || !String(country).trim()) return res.status(400).json({ error: 'Vui lòng chọn quốc gia chung' });
   const list = (Array.isArray(urls) ? urls : String(urls || '').split(/\r?\n/)).map((s) => toTiktokUrl(String(s).trim())).filter(Boolean);
   if (!list.length) return res.status(400).json({ error: 'Chưa dán link nào' });
   const existNorms = new Set(db.prepare('SELECT url FROM tiktok_channels WHERE deleted_at IS NULL').all().map((t) => normalizeUrl(t.url)));
