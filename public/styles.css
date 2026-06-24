@@ -236,6 +236,8 @@ tbody tr:hover { background: var(--card-hover); }
 .quality-tag { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: var(--bg-soft); color: var(--text-dim); }
 .cat-tag { display: inline-block; font-size: 12px; font-weight: 700; padding: 4px 11px; border-radius: 8px; background: #6c5ce722; color: var(--primary-soft); text-transform: capitalize; white-space: normal; overflow-wrap: break-word; word-break: normal; max-width: 200px; line-height: 1.35; vertical-align: top; }
 .cat-cell { min-width: 150px; width: 170px; }
+.chk-col { width: 40px; text-align: center; }
+.chk-col input[type="checkbox"], .country-head input[type="checkbox"] { width: 17px; height: 17px; cursor: pointer; accent-color: var(--primary); vertical-align: middle; }
 .req { font-size: 11px; color: var(--danger); font-weight: 600; }
 .ch-sub-tag { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: #6c5ce722; color: var(--primary-soft); }
 .cell-link { display: inline-block; margin-top: 3px; font-size: 12px; color: var(--info) !important; text-decoration: none; }

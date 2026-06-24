@@ -205,8 +205,14 @@ function navigate(page) {
   else location.hash = '#' + page; // đổi hash -> sự kiện hashchange -> renderPage
 }
 
+const ADMIN_PAGES = ['staff', 'finance', 'activity'];
 function renderPage(page) {
   if (!PAGE_TITLES[page]) page = 'dashboard';
+  // CHẶN nhân viên vào trang dành riêng admin (kể cả khi gõ tay #staff)
+  if (ADMIN_PAGES.includes(page) && (!State.user || State.user.role !== 'admin')) {
+    page = 'dashboard';
+    if (location.hash !== '#dashboard') history.replaceState(null, '', '#dashboard');
+  }
   State.page = page;
   $('#page-title').textContent = PAGE_TITLES[page] || '';
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.page === page));
@@ -343,6 +349,7 @@ let keysFilter = 'all';
 let keysSearch = '';
 let keysOwner = 'all'; // all | mine | unassigned | <userId>
 let keysCountry = 'all';
+let keysSelected = new Set();
 
 async function renderKeys() {
   $('#topbar-right').innerHTML = '';
@@ -350,14 +357,18 @@ async function renderKeys() {
   expBtn.onclick = () => exportCsv('key-youtube.csv',
     ['Chủ đề', 'Nước', 'Tên kênh', 'Link', 'Trạng thái', 'Chất lượng', 'Sub', 'Số video', 'Người làm', 'Người thêm', 'Ngày thêm'],
     keysCache.map((k) => [k.category || '', k.country || '', k.channel_name, k.url, (STATUS[k.status] || {}).label || k.status, QUALITY[k.quality] || k.quality || '', k.subscribers || '', k.video_count || '', k.worker_names || '', k.added_name || '', fmtDate(k.created_at)]));
+  const delSelBtn = el('<button id="key-del-sel" class="btn btn-danger" style="display:none">🗑️ Xóa đã chọn (0)</button>');
+  delSelBtn.onclick = () => deleteSelectedKeys();
   const bulkBtn = el('<button class="btn btn-ghost">📥 Thêm hàng loạt</button>');
   bulkBtn.onclick = () => bulkKeyForm();
   const addBtn = el('<button class="btn btn-primary">➕ Thêm Key</button>');
   addBtn.onclick = () => keyForm();
+  $('#topbar-right').appendChild(delSelBtn);
   $('#topbar-right').appendChild(bulkBtn);
   $('#topbar-right').appendChild(expBtn);
   $('#topbar-right').appendChild(addBtn);
 
+  keysSelected = new Set();
   const view = $('#view');
   view.innerHTML = '<div class="loading">Đang tải danh sách key…</div>';
   try { keysCache = await api('/keys'); } catch (e) { view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
@@ -398,6 +409,7 @@ function drawKeys() {
     if (k.quality) subInfo.push(`<span class="quality-tag ${QUALITY_CLS[k.quality] || ''}">${esc(QUALITY[k.quality] || k.quality)}</span>`);
     if (k.subscribers) subInfo.push(`<span class="ch-sub-tag">👥 ${esc(k.subscribers)}</span>`);
     return `<tr>
+      <td class="chk-col"><input type="checkbox" class="k-row-chk" value="${k.id}" ${keysSelected.has(k.id) ? 'checked' : ''}></td>
       <td class="cat-cell">${k.category ? `<span class="cat-tag" style="${chipStyle(k.category)}">${esc(k.category)}</span>` : '<span class="muted">—</span>'}</td>
       <td><div class="cell-channel">${thumb}<div>
         <a href="${esc(k.url)}" target="_blank" rel="noopener" title="Mở kênh">${esc(k.channel_name)}</a>
@@ -433,7 +445,7 @@ function drawKeys() {
     </div>
     <div class="filter-tabs">${tabsHtml}</div>
     ${list.length ? `<div class="table-wrap"><table>
-      <thead><tr><th class="cat-cell">Chủ đề</th><th>Kênh / Key</th><th>Trạng thái</th><th>Người làm</th><th>Người thêm</th><th></th></tr></thead>
+      <thead><tr><th class="chk-col"><input type="checkbox" id="k-checkall" title="Chọn tất cả"></th><th class="cat-cell">Chủ đề</th><th>Kênh / Key</th><th>Trạng thái</th><th>Người làm</th><th>Người thêm</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table></div>`
       : '<div class="empty"><div class="empty-icon">🔑</div>Chưa có key nào. Bấm "Thêm Key" để bắt đầu.</div>'}`;
 
@@ -447,6 +459,32 @@ function drawKeys() {
   view.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => delKey(b.dataset.del));
   view.querySelectorAll('[data-claim]').forEach((b) => b.onclick = () => optimisticClaim(b.dataset.claim, false));
   view.querySelectorAll('[data-release]').forEach((b) => b.onclick = () => optimisticClaim(b.dataset.release, true));
+  // Checkbox chọn xóa hàng loạt
+  view.querySelectorAll('.k-row-chk').forEach((cb) => cb.onchange = () => {
+    if (cb.checked) keysSelected.add(+cb.value); else keysSelected.delete(+cb.value);
+    updateKeyDelBtn();
+  });
+  const chkAll = $('#k-checkall');
+  if (chkAll) chkAll.onchange = (e) => {
+    view.querySelectorAll('.k-row-chk').forEach((cb) => { cb.checked = e.target.checked; if (e.target.checked) keysSelected.add(+cb.value); else keysSelected.delete(+cb.value); });
+    updateKeyDelBtn();
+  };
+  updateKeyDelBtn();
+}
+
+function updateKeyDelBtn() {
+  const b = $('#key-del-sel'); if (!b) return;
+  const n = keysSelected.size;
+  b.style.display = n ? '' : 'none';
+  b.textContent = `🗑️ Xóa đã chọn (${n})`;
+}
+
+async function deleteSelectedKeys() {
+  const ids = [...keysSelected];
+  if (!ids.length) return;
+  if (!confirm(`Xóa ${ids.length} key đã chọn? Hành động không thể hoàn tác.`)) return;
+  try { const r = await api('/keys/delete-many', { method: 'POST', body: { ids } }); toast(`Đã xóa ${r.deleted} key`); renderKeys(); }
+  catch (e) { toast(e.message, 'err'); }
 }
 
 // HTML tóm tắt nội dung kênh (mô tả + sub + video gần đây)
@@ -644,6 +682,7 @@ let ttSearch = '';
 let ttSort = 'recent';
 let ttPerson = '';
 let ttCountry = 'all';
+let ttSelected = new Set();
 
 // Huy hiệu tình trạng kiếm tiền
 function monetizeChips(t) {
@@ -660,6 +699,9 @@ async function renderTiktok() {
     tiktokCache.map((t) => [t.name, t.tiktok_id || '', t.url, t.country || '', t.followers, t.likes, t.video_count, t.monetized ? 'Có' : 'Chưa', t.paypal_added ? 'Có' : 'Chưa', t.verified ? 'Có' : 'Chưa', (TT_STATUS[t.status] || {}).label || t.status, t.source_key_name || '', t.assigned_name || '']));
   const addBtn = el('<button class="btn btn-primary">➕ Thêm kênh</button>');
   addBtn.onclick = () => tiktokForm();
+  const delSelBtn = el('<button id="tt-del-sel" class="btn btn-danger" style="display:none">🗑️ Xóa đã chọn (0)</button>');
+  delSelBtn.onclick = () => deleteSelectedTiktok();
+  $('#topbar-right').appendChild(delSelBtn);
   const bulkBtn = el('<button class="btn btn-ghost">📥 Thêm hàng loạt</button>');
   bulkBtn.onclick = () => bulkTiktokForm();
   const syncBtn = el(`<button class="btn btn-ghost">🔄 ${State.user.role === 'admin' ? 'Cập nhật tất cả' : 'Cập nhật kênh của tôi'}</button>`);
@@ -676,6 +718,7 @@ async function renderTiktok() {
 
   const view = $('#view');
   view.innerHTML = '<div class="loading">Đang tải kênh TikTok…</div>';
+  ttSelected = new Set();
   try {
     tiktokCache = await api('/tiktok');
     if (!keysCache.length) keysCache = await api('/keys');
@@ -708,6 +751,7 @@ function drawTiktok() {
     const st = TT_STATUS[t.status] || TT_STATUS.active;
     const av = t.avatar ? `<img class="cell-thumb" src="${esc(t.avatar)}" onerror="this.style.visibility='hidden'">` : '<div class="cell-thumb"></div>';
     return `<tr>
+      <td class="chk-col"><input type="checkbox" class="tt-row-chk" value="${t.id}" ${ttSelected.has(t.id) ? 'checked' : ''}></td>
       <td class="stt">${idx + 1}</td>
       <td><div class="cell-channel">${av}<div>
         <a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.name)}</a>
@@ -731,7 +775,7 @@ function drawTiktok() {
       </div></td>
     </tr>`;
   };
-  const thead = `<thead><tr><th>#</th><th>Kênh TikTok</th><th>Follow</th><th>Tym</th><th>Video</th><th>Trạng thái</th><th>Key nguồn</th><th>Giao cho</th><th>Ngày thêm</th><th></th></tr></thead>`;
+  const thead = `<thead><tr><th class="chk-col"></th><th>#</th><th>Kênh TikTok</th><th>Follow</th><th>Tym</th><th>Video</th><th>Trạng thái</th><th>Key nguồn</th><th>Giao cho</th><th>Ngày thêm</th><th></th></tr></thead>`;
 
   // Gom kênh theo quốc gia
   const groups = {};
@@ -744,6 +788,7 @@ function drawTiktok() {
     const gl = items.reduce((a, b) => a + b.likes, 0);
     return `<div class="country-group">
       <div class="country-head">
+        <input type="checkbox" class="tt-grp-check" title="Chọn cả nhóm này">
         <span class="country-flag">${flag(cc)}</span>
         <span class="country-name">${esc(countryName(cc))}</span>
         <span class="country-count">${items.length} kênh</span>
@@ -783,6 +828,32 @@ function drawTiktok() {
   view.querySelectorAll('[data-ttinfo]').forEach((b) => b.onclick = () => { const t = tiktokCache.find((x) => x.id == b.dataset.ttinfo); tiktokDetail(t); });
   view.querySelectorAll('[data-ttedit]').forEach((b) => b.onclick = () => { const t = tiktokCache.find((x) => x.id == b.dataset.ttedit); tiktokForm(t); });
   view.querySelectorAll('[data-ttdel]').forEach((b) => b.onclick = () => delTiktok(b.dataset.ttdel));
+  // Checkbox chọn xóa hàng loạt
+  view.querySelectorAll('.tt-row-chk').forEach((cb) => cb.onchange = () => {
+    if (cb.checked) ttSelected.add(+cb.value); else ttSelected.delete(+cb.value);
+    updateTtDelBtn();
+  });
+  view.querySelectorAll('.tt-grp-check').forEach((cb) => cb.onchange = () => {
+    const grp = cb.closest('.country-group');
+    grp.querySelectorAll('.tt-row-chk').forEach((rc) => { rc.checked = cb.checked; if (cb.checked) ttSelected.add(+rc.value); else ttSelected.delete(+rc.value); });
+    updateTtDelBtn();
+  });
+  updateTtDelBtn();
+}
+
+function updateTtDelBtn() {
+  const b = $('#tt-del-sel'); if (!b) return;
+  const n = ttSelected.size;
+  b.style.display = n ? '' : 'none';
+  b.textContent = `🗑️ Xóa đã chọn (${n})`;
+}
+
+async function deleteSelectedTiktok() {
+  const ids = [...ttSelected];
+  if (!ids.length) return;
+  if (!confirm(`Xóa ${ids.length} kênh TikTok đã chọn? Hành động không thể hoàn tác.`)) return;
+  try { const r = await api('/tiktok/delete-many', { method: 'POST', body: { ids } }); toast(`Đã xóa ${r.deleted} kênh`); renderTiktok(); }
+  catch (e) { toast(e.message, 'err'); }
 }
 
 function tiktokForm(ch = null) {

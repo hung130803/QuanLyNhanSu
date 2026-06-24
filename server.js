@@ -319,6 +319,8 @@ app.post('/api/me/password', auth, (req, res) => {
 // ============ NHÂN SỰ (admin) ============
 app.get('/api/users', auth, (req, res) => {
   const rows = db.prepare('SELECT * FROM users ORDER BY role, name').all();
+  // Nhân viên chỉ nhận id+tên+vai trò (để lọc), không lộ thông tin nhạy cảm
+  if (req.user.role !== 'admin') return res.json(rows.map((u) => ({ id: u.id, name: u.name, role: u.role })));
   res.json(rows.map(publicUser));
 });
 
@@ -502,6 +504,17 @@ app.post('/api/keys/bulk', auth, (req, res) => {
   res.json({ added, skipped, total: list.length });
 });
 
+// Xóa HÀNG LOẠT key
+app.post('/api/keys/delete-many', auth, (req, res) => {
+  const ids = (req.body && req.body.ids) || [];
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Chưa chọn key nào' });
+  const stmt = db.prepare('DELETE FROM keys WHERE id = ?');
+  let n = 0;
+  db.transaction((arr) => { for (const id of arr) n += stmt.run(id).changes; })(ids);
+  logActivity(req, 'delete', `Xóa hàng loạt ${n} key YouTube`);
+  res.json({ deleted: n });
+});
+
 // ============ KÊNH TIKTOK ============
 const TT_STATUS = ['active', 'building', 'banned', 'paused'];
 const tiktokWithNames = `
@@ -642,6 +655,17 @@ app.post('/api/tiktok/bulk', auth, (req, res) => {
   newIds.forEach(enqueueTiktok);
   logActivity(req, 'add', `Thêm hàng loạt ${added} kênh TikTok`);
   res.json({ added, skipped, total: list.length });
+});
+
+// Xóa HÀNG LOẠT kênh TikTok
+app.post('/api/tiktok/delete-many', auth, (req, res) => {
+  const ids = (req.body && req.body.ids) || [];
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Chưa chọn kênh nào' });
+  const stmt = db.prepare('DELETE FROM tiktok_channels WHERE id = ?');
+  let n = 0;
+  db.transaction((arr) => { for (const id of arr) n += stmt.run(id).changes; })(ids);
+  logActivity(req, 'delete', `Xóa hàng loạt ${n} kênh TikTok`);
+  res.json({ deleted: n });
 });
 
 app.put('/api/tiktok/:id', auth, (req, res) => {
