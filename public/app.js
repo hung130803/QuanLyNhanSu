@@ -180,7 +180,7 @@ function buildNav() {
     { id: 'dashboard', icon: '📊', label: 'Tổng quan' },
     { id: 'keys', icon: '🔑', label: 'Key YouTube' },
     { id: 'tiktok', icon: '📱', label: 'Kênh TikTok' },
-    { id: 'videos', icon: '🎞️', label: 'Nhật ký video' },
+    { id: 'videos', icon: '📊', label: 'Báo cáo' },
   ];
   if (isAdmin) {
     items.push({ id: 'staff', icon: '👥', label: 'Nhân sự' });
@@ -199,7 +199,7 @@ function buildNav() {
   });
 }
 
-const PAGE_TITLES = { dashboard: 'Tổng quan', keys: 'Key YouTube', tiktok: 'Kênh TikTok', videos: 'Nhật ký video', staff: 'Nhân sự', finance: 'Lợi nhuận', activity: 'Lịch sử thao tác', trash: 'Thùng rác', settings: 'Cài đặt' };
+const PAGE_TITLES = { dashboard: 'Tổng quan', keys: 'Key YouTube', tiktok: 'Kênh TikTok', videos: 'Báo cáo công việc', staff: 'Nhân sự', finance: 'Lợi nhuận', activity: 'Lịch sử thao tác', trash: 'Thùng rác', settings: 'Cài đặt' };
 
 // Điều hướng có lưu lịch sử (để nút "quay lại" của chuột/trình duyệt hoạt động)
 function navigate(page) {
@@ -229,45 +229,60 @@ window.addEventListener('hashchange', () => {
 });
 
 // ============ DASHBOARD ============
+let dashStats = null; // cache số liệu TikTok + tài chính (số liệu key tính trực tiếp từ keysCache)
+
 async function renderDashboard() {
   const view = $('#view');
-  view.innerHTML = '<div class="loading">Đang tải dữ liệu…</div>';
-  let s, keys;
+  // Có cache thì VẼ NGAY (không chớp "đang tải"), rồi mới làm mới ở nền
+  if (dashStats && keysCache.length) drawDashboard();
+  else view.innerHTML = '<div class="loading">Đang tải dữ liệu…</div>';
   try {
-    s = await api('/stats');
-    keys = await api('/keys');
-  } catch (e) { view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
-  keysCache = keys;
-  const unassigned = keys.filter((k) => !k.worker_count);
-  // Key Ngon lên đầu để nhân viên nhặt key tốt trước
+    const [s, keys] = await Promise.all([api('/stats'), api('/keys')]);
+    dashStats = s; keysCache = keys;
+    if (State.page === 'dashboard') drawDashboard();
+  } catch (e) {
+    if (!dashStats) view.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+  }
+}
+
+function drawDashboard() {
+  const s = dashStats; if (!s) return;
+  const view = $('#view');
+  const me = State.user.name, meId = String(State.user.id);
+  const isWorker = (k) => (k.worker_ids ? String(k.worker_ids).split(',') : []).includes(meId);
+
+  // Số liệu key tính TRỰC TIẾP từ keysCache -> nhận/bỏ làm là đổi số ngay lập tức
+  const totalKeys = keysCache.length;
+  const unassigned = keysCache.filter((k) => !k.worker_count);
   const qRankD = { ngon: 0, tot: 1, thuong: 2 };
   unassigned.sort((a, b) => (qRankD[a.quality] ?? 3) - (qRankD[b.quality] ?? 3));
+  const keysUnassigned = unassigned.length;
+  const myKeys = keysCache.filter(isWorker).length;
 
   let kpis = `
-    <div class="kpi clickable" data-go="keys-all"><div class="kpi-icon">🔑</div><div class="kpi-label">Tổng số Key</div><div class="kpi-value">${fmtNum(s.totalKeys)}</div><div class="kpi-sub">chưa ai làm: ${fmtNum(s.keysUnassigned)} →</div></div>
-    <div class="kpi info clickable" data-go="keys-mine"><div class="kpi-icon">⭐</div><div class="kpi-label">Key của tôi đang làm</div><div class="kpi-value">${fmtNum(s.myKeys)}</div><div class="kpi-sub">xem key của tôi →</div></div>
+    <div class="kpi clickable" data-go="keys-all"><div class="kpi-icon">🔑</div><div class="kpi-label">Tổng số Key</div><div class="kpi-value">${fmtNum(totalKeys)}</div><div class="kpi-sub">chưa ai làm: ${fmtNum(keysUnassigned)} →</div></div>
+    <div class="kpi info clickable" data-go="keys-mine"><div class="kpi-icon">⭐</div><div class="kpi-label">Key của tôi đang làm</div><div class="kpi-value">${fmtNum(myKeys)}</div><div class="kpi-sub">xem key của tôi →</div></div>
     <div class="kpi primary clickable" data-go="tiktok"><div class="kpi-icon">📱</div><div class="kpi-label">${s.isAdmin ? 'Tổng kênh TikTok' : 'Kênh TikTok của tôi'}</div><div class="kpi-value">${fmtNum(s.tiktok.channels)}</div><div class="kpi-sub">mở danh sách →</div></div>`;
   if (s.finance) kpis += `
     <div class="kpi accent clickable" data-go="finance"><div class="kpi-icon">💵</div><div class="kpi-label">Doanh thu tháng</div><div class="kpi-value">${fmtMoney(s.finance.revenueMonth)}</div><div class="kpi-sub">xem chi tiết →</div></div>
     <div class="kpi ${s.finance.profitMonth >= 0 ? 'primary' : 'danger'} clickable" data-go="finance"><div class="kpi-icon">📈</div><div class="kpi-label">Lợi nhuận tháng</div><div class="kpi-value">${fmtMoney(s.finance.profitMonth)}</div><div class="kpi-sub">tổng: ${fmtMoney(s.finance.profitAll)} →</div></div>`;
 
   // Key đã có người làm — gom theo từng người (ai cũng thấy để khỏi trùng)
-  const me = State.user.name;
   const keysByPerson = {};
-  keys.forEach((k) => {
+  keysCache.forEach((k) => {
     if (!k.worker_count) return;
     (k.worker_names || '').split(', ').filter(Boolean).forEach((n) => { (keysByPerson[n] = keysByPerson[n] || []).push(k); });
   });
-  // Đưa nhóm của mình lên đầu
   const personNames = Object.keys(keysByPerson).sort((a, b) => (a === me ? -1 : b === me ? 1 : 0));
   const claimedHtml = personNames.length ? personNames.map((name) => `
     <div class="user-channels">
       <div class="uc-head"><span class="uc-name">👤 ${esc(name)}${name === me ? ' <span class="me-tag">bạn</span>' : ''}</span><span class="uc-meta">${keysByPerson[name].length} key</span></div>
       ${keysByPerson[name].map((k, i) => `
-        <div class="uc-item" data-keygo="${k.id}" title="Xem chi tiết">
+        <div class="uc-item">
           <span class="uc-num">${i + 1}</span>
-          <span class="uc-cn">${esc(k.channel_name)}</span>
+          <span class="uc-cn" data-keygo="${k.id}" title="Xem chi tiết" style="cursor:pointer">${esc(k.channel_name)}</span>
           <span class="badge ${k.status}">${(STATUS[k.status] || STATUS.todo).label}</span>
+          ${name === me ? `<button class="btn-link" data-dashrelease="${k.id}" title="Bỏ làm key này">↩ bỏ</button>` : ''}
         </div>`).join('')}
     </div>`).join('') : '<div class="empty" style="padding:30px 10px">Chưa ai nhận key nào.</div>';
 
@@ -322,7 +337,6 @@ async function renderDashboard() {
     else if (go === 'tiktok') navigate('tiktok');
     else if (go === 'finance') navigate('finance');
   });
-  // Tìm nhanh trong danh sách key chưa làm (ẩn/hiện ngay, không tải lại)
   const uaSearch = $('#ua-search');
   if (uaSearch) uaSearch.oninput = () => {
     const q = uaSearch.value.trim().toLowerCase();
@@ -330,21 +344,16 @@ async function renderDashboard() {
       it.style.display = !q || it.dataset.name.includes(q) ? '' : 'none';
     });
   };
-  view.querySelectorAll('[data-keygo]').forEach((b) => b.onclick = () => { const k = keys.find((x) => x.id == b.dataset.keygo); if (k) keyDetail(k); });
+  view.querySelectorAll('[data-keygo]').forEach((b) => b.onclick = () => { const k = keysCache.find((x) => x.id == b.dataset.keygo); if (k) keyDetail(k); });
   view.querySelectorAll('[data-ttgo]').forEach((b) => b.onclick = async () => {
     try { if (!tiktokCache.length) tiktokCache = await api('/tiktok'); const t = tiktokCache.find((x) => x.id == b.dataset.ttgo); if (t) tiktokDetail(t); } catch (_) {}
   });
-  view.querySelectorAll('[data-claim]').forEach((b) => b.onclick = () => claimKey(b.dataset.claim));
+  view.querySelectorAll('[data-claim]').forEach((b) => b.onclick = () => dashClaim(b.dataset.claim, false));
+  view.querySelectorAll('[data-dashrelease]').forEach((b) => b.onclick = () => dashClaim(b.dataset.dashrelease, true));
 }
 
-async function claimKey(id) {
-  try { await api('/keys/' + id + '/claim', { method: 'POST', body: {} }); toast('✋ Đã nhận key — đánh dấu bạn đang làm'); tiktokCache = []; renderDashboard(); }
-  catch (e) { toast(e.message, 'err'); }
-}
-
-// Nhận / bỏ làm key TỨC THÌ: cập nhật giao diện ngay, gửi server ở nền (không phải chờ)
-function optimisticClaim(id, release) {
-  const k = keysCache.find((x) => x.id == id); if (!k) return;
+// Cập nhật worker của 1 key ngay tại chỗ (dùng chung cho mọi trang)
+function mutateClaim(k, release) {
   const meId = String(State.user.id), meName = State.user.name;
   let ids = k.worker_ids ? String(k.worker_ids).split(',').filter(Boolean) : [];
   let names = k.worker_names ? k.worker_names.split(', ').filter(Boolean) : [];
@@ -357,6 +366,22 @@ function optimisticClaim(id, release) {
     if (k.status === 'todo') k.status = 'doing';
   }
   k.worker_ids = ids.join(','); k.worker_names = names.join(', '); k.worker_count = ids.length;
+}
+
+// Nhận / bỏ làm TỨC THÌ ở trang Tổng quan
+function dashClaim(id, release) {
+  const k = keysCache.find((x) => x.id == id); if (!k) return;
+  mutateClaim(k, release);
+  drawDashboard(); // vẽ lại ngay, không chờ server
+  api('/keys/' + id + '/claim', { method: 'POST', body: release ? { release: true } : {} })
+    .then((u) => { const i = keysCache.findIndex((x) => x.id == id); if (i >= 0 && u && u.id) keysCache[i] = u; })
+    .catch((e) => { toast(e.message, 'err'); renderDashboard(); });
+}
+
+// Nhận / bỏ làm TỨC THÌ ở trang Key
+function optimisticClaim(id, release) {
+  const k = keysCache.find((x) => x.id == id); if (!k) return;
+  mutateClaim(k, release);
   drawKeys(); // hiện ngay
   api('/keys/' + id + '/claim', { method: 'POST', body: release ? { release: true } : {} })
     .then((updated) => { const idx = keysCache.findIndex((x) => x.id == id); if (idx >= 0 && updated && updated.id) keysCache[idx] = updated; })
@@ -412,9 +437,14 @@ async function renderKeys() {
 
   keysSelected = new Set();
   const view = $('#view');
-  view.innerHTML = '<div class="loading">Đang tải danh sách key…</div>';
-  try { keysCache = await api('/keys'); } catch (e) { view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
-  drawKeys();
+  // Có cache thì vẽ NGAY rồi làm mới ở nền -> chuyển tab là thấy liền
+  if (keysCache.length) drawKeys();
+  else view.innerHTML = '<div class="loading">Đang tải danh sách key…</div>';
+  try {
+    const fresh = await api('/keys');
+    keysCache = fresh;
+    if (State.page === 'keys') drawKeys();
+  } catch (e) { if (!keysCache.length) view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 }
 
 function drawKeys() {
@@ -464,9 +494,9 @@ function drawKeys() {
       <td class="chk-col"><input type="checkbox" class="k-row-chk" value="${k.id}" ${keysSelected.has(k.id) ? 'checked' : ''}></td>
       <td class="cat-cell">${k.category ? `<span class="cat-tag" style="${chipStyle(k.category)}">${esc(k.category)}</span>` : '<span class="muted">—</span>'}</td>
       <td><div class="cell-channel">${thumb}<div>
-        <a href="${esc(k.url)}" target="_blank" rel="noopener" title="Mở kênh">${esc(k.channel_name)}</a>
+        <a href="${esc(k.url)}" target="_blank" rel="noopener" title="Bấm mở kênh">${esc(k.channel_name)}</a>
         <div class="cell-sub">${subInfo.join(' ')}</div>
-        <a href="${esc(k.url)}" target="_blank" rel="noopener" class="cell-link" title="Bấm để mở trình duyệt">🔗 ${esc((k.url || '').replace(/^https?:\/\//, '').replace(/^www\./, '').slice(0, 42))}</a>
+        <div class="cell-url">${esc((k.url || '').replace(/^https?:\/\//, '').replace(/^www\./, '').slice(0, 46))}</div>
       </div></div></td>
       <td><span class="badge ${k.status}">${st.icon} ${st.label}</span></td>
       <td>${amWorker(k)
@@ -783,13 +813,16 @@ async function renderTiktok() {
   $('#topbar-right').appendChild(addBtn);
 
   const view = $('#view');
-  view.innerHTML = '<div class="loading">Đang tải kênh TikTok…</div>';
   ttSelected = new Set();
+  // Có cache thì vẽ NGAY rồi làm mới ở nền
+  if (tiktokCache.length) drawTiktok();
+  else view.innerHTML = '<div class="loading">Đang tải kênh TikTok…</div>';
   try {
-    tiktokCache = await api('/tiktok');
-    if (!keysCache.length) keysCache = await api('/keys');
-  } catch (e) { view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
-  drawTiktok();
+    const fresh = await api('/tiktok');
+    tiktokCache = fresh;
+    if (State.page === 'tiktok') drawTiktok();
+    if (!keysCache.length) { keysCache = await api('/keys'); } // cho ô chọn key nguồn
+  } catch (e) { if (!tiktokCache.length) view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 }
 
 function drawTiktok() {
@@ -820,9 +853,9 @@ function drawTiktok() {
       <td class="chk-col"><input type="checkbox" class="tt-row-chk" value="${t.id}" ${ttSelected.has(t.id) ? 'checked' : ''}></td>
       <td class="stt">${idx + 1}</td>
       <td><div class="cell-channel">${av}<div>
-        <a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.name)}</a>
+        <a href="${esc(t.url)}" target="_blank" rel="noopener" title="Bấm mở kênh">${esc(t.name)}</a>
         <div class="cell-sub">${t.tiktok_id ? '@' + esc(t.tiktok_id) : ''}</div>
-        <a href="${esc(t.url)}" target="_blank" rel="noopener" class="cell-link">🔗 ${esc((t.url || '').replace(/^https?:\/\//, '').replace(/^www\./, '').slice(0, 38))}</a>
+        <div class="cell-url">${esc((t.url || '').replace(/^https?:\/\//, '').replace(/^www\./, '').slice(0, 42))}</div>
         ${t.note ? `<div class="cell-note">📝 ${esc(t.note)}</div>` : ''}
         ${monetizeChips(t)}
       </div></div></td>
@@ -1217,8 +1250,23 @@ function bulkTiktokForm() {
   openModal('📥 Thêm hàng loạt kênh TikTok', form);
 }
 
-// ============ VIDEO LOGS ============
+// ============ BÁO CÁO CÔNG VIỆC (ngày / tuần / tháng) ============
+let reportPeriod = 'today'; // today | week | month | custom
 let videoFrom = '', videoTo = '';
+let reportLast = null; // cache để vẽ ngay, không chớp "đang tải"
+
+// Ngày theo giờ máy người dùng (VN) — tránh lệch ngày do UTC
+const localDate = (d = new Date()) => { const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000); return z.toISOString().slice(0, 10); };
+const weekStartStr = () => { const d = new Date(); const off = (d.getDay() + 6) % 7; d.setDate(d.getDate() - off); return localDate(d); };
+const monthStartStr = () => { const d = new Date(); return localDate(new Date(d.getFullYear(), d.getMonth(), 1)); };
+
+function reportRange() {
+  if (reportPeriod === 'today') return [localDate(), localDate()];
+  if (reportPeriod === 'week') return [weekStartStr(), localDate()];
+  if (reportPeriod === 'month') return [monthStartStr(), localDate()];
+  if (!videoFrom) { const d = new Date(); d.setDate(d.getDate() - 29); videoFrom = localDate(d); videoTo = localDate(); }
+  return [videoFrom, videoTo];
+}
 
 async function renderVideos() {
   $('#topbar-right').innerHTML = '';
@@ -1228,29 +1276,42 @@ async function renderVideos() {
   $('#topbar-right').appendChild(expBtn);
   $('#topbar-right').appendChild(addBtn);
 
-  if (!videoFrom) { const d = new Date(); d.setDate(d.getDate() - 29); videoFrom = d.toISOString().slice(0, 10); videoTo = todayStr(); }
-
+  const [from, to] = reportRange();
   const view = $('#view');
-  view.innerHTML = '<div class="loading">Đang tải báo cáo…</div>';
-  let report, logs;
+  // Có cache thì vẽ ngay
+  if (reportLast) drawReport(reportLast, expBtn);
+  else view.innerHTML = '<div class="loading">Đang tải báo cáo…</div>';
   try {
-    report = await api(`/report/videos?from=${videoFrom}&to=${videoTo}`);
-    logs = await api(`/videologs?from=${videoFrom}&to=${videoTo}`);
-  } catch (e) { view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+    const [work, logs] = await Promise.all([
+      api(`/report/work?from=${from}&to=${to}`),
+      api(`/videologs?from=${from}&to=${to}`),
+    ]);
+    reportLast = { work, logs, from, to };
+    if (State.page === 'videos') drawReport(reportLast, expBtn);
+  } catch (e) { if (!reportLast) view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+
+function drawReport(data, expBtn) {
+  const { work, logs, from, to } = data;
+  const view = $('#view');
   const isAdmin = State.user.role === 'admin';
+  const t = work.totals || { videos: 0, channels: 0, keys: 0 };
 
-  expBtn.onclick = () => exportCsv('bao-cao-video.csv',
-    ['Nhân viên', 'Tổng video', 'Số key đã làm', 'Số lần ghi', 'Ngày gần nhất'],
-    report.rows.map((r) => [r.name, r.total_videos, r.keys_count, r.log_count, r.last_day ? fmtDate(r.last_day) : '']));
+  if (expBtn) expBtn.onclick = () => exportCsv('bao-cao-cong-viec.csv',
+    ['Nhân viên', 'Video', 'Kênh mới', 'Key mới'],
+    work.perUser.map((r) => [r.name, r.videos, r.channels, r.keys]));
 
-  const repRows = report.rows.length ? report.rows.map((r, i) => `<tr>
+  const periods = [['today', '📅 Hôm nay'], ['week', '🗓️ Tuần này'], ['month', '📆 Tháng này'], ['custom', '⚙️ Tùy chọn']];
+  const tabsHtml = periods.map(([id, label]) =>
+    `<div class="filter-tab ${reportPeriod === id ? 'active' : ''}" data-period="${id}">${label}</div>`).join('');
+
+  const repRows = work.perUser.length ? work.perUser.map((r, i) => `<tr>
     <td class="stt">${i + 1}</td>
     <td><b>${esc(r.name)}</b></td>
-    <td><b class="text-accent" style="font-size:16px">${fmtNum(r.total_videos)}</b></td>
-    <td><b>${fmtNum(r.keys_count)}</b> key</td>
-    <td class="cell-sub">${fmtNum(r.log_count)} lần ghi</td>
-    <td class="cell-sub nowrap">${r.last_day ? fmtDate(r.last_day) : '—'}</td>
-  </tr>`).join('') : `<tr><td colspan="6"><div class="empty" style="padding:24px">Chưa có dữ liệu trong kỳ này.</div></td></tr>`;
+    <td><b class="text-accent" style="font-size:16px">${fmtNum(r.videos)}</b></td>
+    <td><b>${fmtNum(r.channels)}</b></td>
+    <td><b>${fmtNum(r.keys)}</b></td>
+  </tr>`).join('') : `<tr><td colspan="5"><div class="empty" style="padding:24px">Chưa có hoạt động nào trong kỳ này.</div></td></tr>`;
 
   const logRows = logs.map((v) => `<tr>
     <td class="nowrap">${fmtDate(v.log_date)}</td>
@@ -1264,29 +1325,36 @@ async function renderVideos() {
     </div></td>
   </tr>`).join('');
 
+  const rangeLabel = from === to ? fmtDate(from) : `${fmtDate(from)} → ${fmtDate(to)}`;
+
   view.innerHTML = `
-    <div class="toolbar">
-      <div><label class="cell-sub">Từ ngày</label><input type="date" id="v-from" value="${videoFrom}"></div>
-      <div><label class="cell-sub">Đến ngày</label><input type="date" id="v-to" value="${videoTo}"></div>
-      <div class="spacer"></div>
-      <div class="kpi" style="padding:10px 18px;margin:0"><div class="kpi-label">Tổng video kỳ này</div><div class="kpi-value text-accent" style="font-size:22px">${fmtNum(report.totalVideos)}</div></div>
+    <div class="filter-tabs">${tabsHtml}</div>
+    ${reportPeriod === 'custom' ? `<div class="toolbar">
+      <div><label class="cell-sub">Từ ngày</label><input type="date" id="v-from" value="${from}"></div>
+      <div><label class="cell-sub">Đến ngày</label><input type="date" id="v-to" value="${to}"></div>
+    </div>` : ''}
+    <div class="kpi-grid" style="margin-bottom:18px">
+      <div class="kpi accent"><div class="kpi-icon">🎬</div><div class="kpi-label">Video đã làm</div><div class="kpi-value">${fmtNum(t.videos)}</div><div class="kpi-sub">${rangeLabel}</div></div>
+      <div class="kpi primary"><div class="kpi-icon">📱</div><div class="kpi-label">Kênh TikTok mới</div><div class="kpi-value">${fmtNum(t.channels)}</div><div class="kpi-sub">${rangeLabel}</div></div>
+      <div class="kpi info"><div class="kpi-icon">🔑</div><div class="kpi-label">Key mới (đã test/thêm)</div><div class="kpi-value">${fmtNum(t.keys)}</div><div class="kpi-sub">${rangeLabel}</div></div>
     </div>
     <div class="panel">
-      <div class="panel-title">📊 Báo cáo theo nhân viên &nbsp;<span class="muted" style="font-weight:400;font-size:13px">${fmtDate(videoFrom)} → ${fmtDate(videoTo)}</span></div>
+      <div class="panel-title">📊 ${isAdmin ? 'Báo cáo theo nhân viên' : 'Kết quả của tôi'} &nbsp;<span class="muted" style="font-weight:400;font-size:13px">${rangeLabel}</span></div>
       <div class="table-wrap"><table>
-        <thead><tr><th>#</th><th>Nhân viên</th><th>Tổng video</th><th>Số key đã làm</th><th>Số lần ghi</th><th>Ngày gần nhất</th></tr></thead>
+        <thead><tr><th>#</th><th>Nhân viên</th><th>🎬 Video</th><th>📱 Kênh mới</th><th>🔑 Key mới</th></tr></thead>
         <tbody>${repRows}</tbody></table></div>
     </div>
     <div class="panel">
-      <div class="panel-title">📝 Chi tiết nhật ký</div>
+      <div class="panel-title">📝 Chi tiết video đã ghi</div>
       ${logs.length ? `<div class="table-wrap"><table>
         <thead><tr><th>Ngày</th>${isAdmin ? '<th>Nhân sự</th>' : ''}<th>Số video</th><th>Key</th><th>Ghi chú</th><th></th></tr></thead>
         <tbody>${logRows}</tbody></table></div>`
-        : '<div class="empty" style="padding:24px">Chưa có nhật ký nào trong kỳ này.</div>'}
+        : '<div class="empty" style="padding:24px">Chưa ghi video nào trong kỳ này. Bấm "➕ Ghi video" để báo cáo.</div>'}
     </div>`;
 
-  $('#v-from').onchange = (e) => { videoFrom = e.target.value; renderVideos(); };
-  $('#v-to').onchange = (e) => { videoTo = e.target.value; renderVideos(); };
+  view.querySelectorAll('[data-period]').forEach((tb) => tb.onclick = () => { reportPeriod = tb.dataset.period; renderVideos(); });
+  if ($('#v-from')) $('#v-from').onchange = (e) => { videoFrom = e.target.value; renderVideos(); };
+  if ($('#v-to')) $('#v-to').onchange = (e) => { videoTo = e.target.value; renderVideos(); };
   view.querySelectorAll('[data-vedit]').forEach((b) => b.onclick = () => { const v = logs.find((x) => x.id == b.dataset.vedit); videoForm(v); });
   view.querySelectorAll('[data-vdel]').forEach((b) => b.onclick = () => delVideo(b.dataset.vdel));
 }
@@ -1299,7 +1367,7 @@ function videoForm(log = null) {
 
   const form = el(`<form>
     <div class="form-grid">
-      <div class="form-row"><label>Ngày</label><input type="date" id="v-date" value="${log?.log_date?.slice(0,10) || todayStr()}"></div>
+      <div class="form-row"><label>Ngày</label><input type="date" id="v-date" value="${log?.log_date?.slice(0,10) || localDate()}"></div>
       <div class="form-row"><label>Số video</label><input type="number" id="v-count" min="0" value="${log?.count ?? 1}"></div>
     </div>
     ${isAdmin ? `<div class="form-row"><label>Nhân sự</label><select id="v-user">${userOptions}</select></div>` : ''}

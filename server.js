@@ -818,6 +818,50 @@ app.get('/api/report/videos', auth, (req, res) => {
   res.json({ rows, totalVideos });
 });
 
+// Báo cáo công việc: trong khoảng ngày, mỗi người làm bao nhiêu VIDEO, thêm bao nhiêu KÊNH, bao nhiêu KEY
+// Ngày tính theo giờ Việt Nam (+7) để khớp với cảm nhận "hôm nay" của team.
+app.get('/api/report/work', auth, (req, res) => {
+  const { from, to } = req.query;
+  const isAdmin = req.user.role === 'admin';
+  const me = req.user.id;
+
+  // 1) Video (theo video_logs.log_date — ngày do nhân viên nhập)
+  const vp = []; let vWhere = 'WHERE 1=1';
+  if (from) { vWhere += ' AND v.log_date >= ?'; vp.push(from); }
+  if (to) { vWhere += ' AND v.log_date <= ?'; vp.push(to); }
+  if (!isAdmin) { vWhere += ' AND v.user_id = ?'; vp.push(me); }
+  const videoRows = db.prepare(`SELECT v.user_id id, COALESCE(SUM(v.count),0) videos, COUNT(v.id) logs FROM video_logs v ${vWhere} GROUP BY v.user_id`).all(...vp);
+
+  // 2) Kênh TikTok thêm mới (theo người thêm, ngày tạo giờ VN)
+  const cp = []; let cWhere = 'WHERE deleted_at IS NULL';
+  if (from) { cWhere += " AND date(created_at,'+7 hours') >= ?"; cp.push(from); }
+  if (to) { cWhere += " AND date(created_at,'+7 hours') <= ?"; cp.push(to); }
+  if (!isAdmin) { cWhere += ' AND added_by = ?'; cp.push(me); }
+  const chanRows = db.prepare(`SELECT added_by id, COUNT(*) channels FROM tiktok_channels ${cWhere} GROUP BY added_by`).all(...cp);
+
+  // 3) Key YouTube thêm mới (theo người thêm, ngày tạo giờ VN)
+  const kp = []; let kWhere = 'WHERE deleted_at IS NULL';
+  if (from) { kWhere += " AND date(created_at,'+7 hours') >= ?"; kp.push(from); }
+  if (to) { kWhere += " AND date(created_at,'+7 hours') <= ?"; kp.push(to); }
+  if (!isAdmin) { kWhere += ' AND added_by = ?'; kp.push(me); }
+  const keyRows = db.prepare(`SELECT added_by id, COUNT(*) keys FROM keys ${kWhere} GROUP BY added_by`).all(...kp);
+
+  // Gộp theo người
+  const byId = {};
+  const ensure = (id) => { if (!byId[id]) byId[id] = { id, name: '', videos: 0, channels: 0, keys: 0, logs: 0 }; return byId[id]; };
+  videoRows.forEach((r) => { const u = ensure(r.id); u.videos = r.videos; u.logs = r.logs; });
+  chanRows.forEach((r) => { if (r.id != null) { ensure(r.id).channels = r.channels; } });
+  keyRows.forEach((r) => { if (r.id != null) { ensure(r.id).keys = r.keys; } });
+  // Gắn tên
+  const names = {};
+  db.prepare('SELECT id, name FROM users').all().forEach((u) => { names[u.id] = u.name; });
+  let perUser = Object.values(byId).filter((u) => u.videos || u.channels || u.keys);
+  perUser.forEach((u) => { u.name = names[u.id] || '(đã xóa)'; });
+  perUser.sort((a, b) => (b.videos - a.videos) || (b.channels - a.channels) || (b.keys - a.keys));
+  const totals = perUser.reduce((a, u) => ({ videos: a.videos + u.videos, channels: a.channels + u.channels, keys: a.keys + u.keys }), { videos: 0, channels: 0, keys: 0 });
+  res.json({ from: from || null, to: to || null, perUser, totals });
+});
+
 app.post('/api/videologs', auth, (req, res) => {
   let { key_id, user_id, log_date, count, note } = req.body || {};
   if (!log_date) log_date = new Date().toISOString().slice(0, 10);
