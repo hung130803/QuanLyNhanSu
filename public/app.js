@@ -469,6 +469,7 @@ function drawKeys() {
     view.querySelectorAll('.k-row-chk').forEach((cb) => { cb.checked = e.target.checked; if (e.target.checked) keysSelected.add(+cb.value); else keysSelected.delete(+cb.value); });
     updateKeyDelBtn();
   };
+  enableRowSelect(view, 'k-row-chk');
   updateKeyDelBtn();
 }
 
@@ -706,10 +707,13 @@ async function renderTiktok() {
   bulkBtn.onclick = () => bulkTiktokForm();
   const syncBtn = el(`<button class="btn btn-ghost">🔄 ${State.user.role === 'admin' ? 'Cập nhật tất cả' : 'Cập nhật kênh của tôi'}</button>`);
   syncBtn.onclick = async () => {
+    if (syncBtn.disabled) return;
+    syncBtn.disabled = true;
     try {
       await api('/tiktok/sync-all', { method: 'POST', body: {} });
-      toast('Đang cập nhật số liệu ở hậu trường… vài phút nữa làm mới trang để xem');
-    } catch (e) { toast(e.message, 'err'); }
+      toast('⏳ Đang cập nhật số liệu…');
+      pollSyncAndRefresh(syncBtn);
+    } catch (e) { toast(e.message, 'err'); syncBtn.disabled = false; }
   };
   $('#topbar-right').appendChild(syncBtn);
   $('#topbar-right').appendChild(bulkBtn);
@@ -838,6 +842,7 @@ function drawTiktok() {
     grp.querySelectorAll('.tt-row-chk').forEach((rc) => { rc.checked = cb.checked; if (cb.checked) ttSelected.add(+rc.value); else ttSelected.delete(+rc.value); });
     updateTtDelBtn();
   });
+  view.querySelectorAll('.country-group').forEach((g) => enableRowSelect(g, 'tt-row-chk'));
   updateTtDelBtn();
 }
 
@@ -854,6 +859,43 @@ async function deleteSelectedTiktok() {
   if (!confirm(`Xóa ${ids.length} kênh TikTok đã chọn? Hành động không thể hoàn tác.`)) return;
   try { const r = await api('/tiktok/delete-many', { method: 'POST', body: { ids } }); toast(`Đã xóa ${r.deleted} kênh`); renderTiktok(); }
   catch (e) { toast(e.message, 'err'); }
+}
+
+// Theo dõi tiến trình "Cập nhật tất cả" và tự làm mới khi xong
+let syncPollTimer = null;
+function pollSyncAndRefresh(btn) {
+  clearInterval(syncPollTimer);
+  let everRan = false, ticks = 0;
+  syncPollTimer = setInterval(async () => {
+    ticks++;
+    let s;
+    try { s = await api('/tiktok/sync-status'); } catch (_) { return; }
+    if (s.running) { everRan = true; if (btn) btn.textContent = `⏳ Đang cập nhật ${s.ok}/${s.total}…`; }
+    if ((!s.running && (everRan || ticks >= 2)) || ticks > 80) {
+      clearInterval(syncPollTimer);
+      if (State.page === 'tiktok') { toast('✓ Đã cập nhật xong số liệu'); renderTiktok(); }
+    }
+  }, 2500);
+}
+
+// Chọn dòng để xóa: bấm vào dòng để chọn, GIỮ SHIFT bấm để chọn cả dải
+function enableRowSelect(scope, chkClass) {
+  const rows = [...scope.querySelectorAll('tbody tr')];
+  let anchor = null;
+  rows.forEach((tr, idx) => {
+    tr.addEventListener('click', (e) => {
+      if (e.target.closest('a, button, input, label, .row-actions')) return;
+      const cb = tr.querySelector('.' + chkClass); if (!cb) return;
+      if (e.shiftKey && anchor != null) {
+        const [lo, hi] = anchor < idx ? [anchor, idx] : [idx, anchor];
+        for (let i = lo; i <= hi; i++) { const c = rows[i].querySelector('.' + chkClass); if (c && !c.checked) { c.checked = true; c.dispatchEvent(new Event('change')); } }
+        if (window.getSelection) window.getSelection().removeAllRanges();
+      } else {
+        cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); anchor = idx;
+      }
+    });
+    tr.classList.add('selectable-row');
+  });
 }
 
 function tiktokForm(ch = null) {

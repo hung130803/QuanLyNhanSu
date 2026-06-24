@@ -505,13 +505,19 @@ app.post('/api/keys/bulk', auth, (req, res) => {
 });
 
 // Xóa HÀNG LOẠT key
+function namesLabel(names) {
+  if (!names.length) return '';
+  return names.length <= 15 ? names.join(', ') : names.slice(0, 15).join(', ') + ` …và ${names.length - 15} cái khác`;
+}
 app.post('/api/keys/delete-many', auth, (req, res) => {
   const ids = (req.body && req.body.ids) || [];
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Chưa chọn key nào' });
+  const getName = db.prepare('SELECT channel_name FROM keys WHERE id = ?');
+  const names = ids.map((id) => getName.get(id)).filter(Boolean).map((r) => r.channel_name);
   const stmt = db.prepare('DELETE FROM keys WHERE id = ?');
   let n = 0;
   db.transaction((arr) => { for (const id of arr) n += stmt.run(id).changes; })(ids);
-  logActivity(req, 'delete', `Xóa hàng loạt ${n} key YouTube`);
+  logActivity(req, 'delete', `Xóa ${n} key YouTube: ${namesLabel(names)}`);
   res.json({ deleted: n });
 });
 
@@ -661,10 +667,12 @@ app.post('/api/tiktok/bulk', auth, (req, res) => {
 app.post('/api/tiktok/delete-many', auth, (req, res) => {
   const ids = (req.body && req.body.ids) || [];
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Chưa chọn kênh nào' });
+  const getName = db.prepare('SELECT name FROM tiktok_channels WHERE id = ?');
+  const names = ids.map((id) => getName.get(id)).filter(Boolean).map((r) => r.name);
   const stmt = db.prepare('DELETE FROM tiktok_channels WHERE id = ?');
   let n = 0;
   db.transaction((arr) => { for (const id of arr) n += stmt.run(id).changes; })(ids);
-  logActivity(req, 'delete', `Xóa hàng loạt ${n} kênh TikTok`);
+  logActivity(req, 'delete', `Xóa ${n} kênh TikTok: ${namesLabel(names)}`);
   res.json({ deleted: n });
 });
 
