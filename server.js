@@ -387,7 +387,7 @@ const keyWithNames = `
 `;
 
 app.get('/api/keys', auth, (req, res) => {
-  const rows = db.prepare(keyWithNames + ' ORDER BY k.created_at DESC').all();
+  const rows = db.prepare(keyWithNames + ' WHERE k.deleted_at IS NULL ORDER BY k.created_at DESC').all();
   res.json(rows);
 });
 
@@ -400,7 +400,7 @@ app.post('/api/keys', auth, async (req, res) => {
   if (!category || !String(category).trim()) return res.status(400).json({ error: 'Vui lòng nhập chủ đề key' });
   // CHỐNG TRÙNG: so link đã chuẩn hóa với các key hiện có
   const norm = normalizeUrl(url);
-  const allKeys = db.prepare(keyWithNames).all();
+  const allKeys = db.prepare(keyWithNames + ' WHERE k.deleted_at IS NULL').all();
   let dup = allKeys.find((k) => normalizeUrl(k.url) === norm);
   if (!dup && channel_id) dup = allKeys.find((k) => k.channel_id && k.channel_id === channel_id);
   if (dup) return res.status(409).json({ error: 'duplicate', key: dup });
@@ -459,8 +459,8 @@ app.put('/api/keys/:id', auth, (req, res) => {
 
 app.delete('/api/keys/:id', auth, (req, res) => {
   const k = db.prepare('SELECT channel_name FROM keys WHERE id = ?').get(req.params.id);
-  db.prepare('DELETE FROM keys WHERE id = ?').run(req.params.id);
-  logActivity(req, 'delete', `Xóa key YouTube "${k ? k.channel_name : req.params.id}"`);
+  db.prepare("UPDATE keys SET deleted_at = datetime('now') WHERE id = ?").run(req.params.id);
+  logActivity(req, 'delete', `Xóa key YouTube "${k ? k.channel_name : req.params.id}" (vào thùng rác)`);
   res.json({ ok: true });
 });
 
@@ -488,7 +488,7 @@ app.post('/api/keys/bulk', auth, (req, res) => {
   if (!category || !String(category).trim()) return res.status(400).json({ error: 'Vui lòng nhập chủ đề cho cả nhóm' });
   const list = (Array.isArray(urls) ? urls : String(urls || '').split(/\r?\n/)).map((s) => String(s).trim()).filter(Boolean);
   if (!list.length) return res.status(400).json({ error: 'Chưa dán link nào' });
-  const existNorms = new Set(db.prepare('SELECT url FROM keys').all().map((k) => normalizeUrl(k.url)));
+  const existNorms = new Set(db.prepare('SELECT url FROM keys WHERE deleted_at IS NULL').all().map((k) => normalizeUrl(k.url)));
   let added = 0, skipped = 0; const newIds = [];
   for (const url of list) {
     const norm = normalizeUrl(url);
@@ -514,10 +514,10 @@ app.post('/api/keys/delete-many', auth, (req, res) => {
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Chưa chọn key nào' });
   const getName = db.prepare('SELECT channel_name FROM keys WHERE id = ?');
   const names = ids.map((id) => getName.get(id)).filter(Boolean).map((r) => r.channel_name);
-  const stmt = db.prepare('DELETE FROM keys WHERE id = ?');
+  const stmt = db.prepare("UPDATE keys SET deleted_at = datetime('now') WHERE id = ? AND deleted_at IS NULL");
   let n = 0;
   db.transaction((arr) => { for (const id of arr) n += stmt.run(id).changes; })(ids);
-  logActivity(req, 'delete', `Xóa ${n} key YouTube: ${namesLabel(names)}`);
+  logActivity(req, 'delete', `Xóa ${n} key YouTube (vào thùng rác): ${namesLabel(names)}`);
   res.json({ deleted: n });
 });
 
@@ -588,9 +588,9 @@ async function runKeyQueue() {
 app.get('/api/tiktok', auth, (req, res) => {
   // Nhân viên chỉ thấy kênh của mình (assigned_to hoặc added_by là mình)
   if (req.user.role !== 'admin') {
-    return res.json(db.prepare(tiktokWithNames + ' WHERE t.assigned_to = ? OR t.added_by = ? ORDER BY t.created_at DESC').all(req.user.id, req.user.id));
+    return res.json(db.prepare(tiktokWithNames + ' WHERE t.deleted_at IS NULL AND (t.assigned_to = ? OR t.added_by = ?) ORDER BY t.created_at DESC').all(req.user.id, req.user.id));
   }
-  res.json(db.prepare(tiktokWithNames + ' ORDER BY t.created_at DESC').all());
+  res.json(db.prepare(tiktokWithNames + ' WHERE t.deleted_at IS NULL ORDER BY t.created_at DESC').all());
 });
 
 // Dữ liệu biểu đồ tăng trưởng của 1 kênh
@@ -606,7 +606,7 @@ app.post('/api/tiktok/preview', auth, async (req, res) => {
   const info = await fetchTiktokInfo(url);
   info.url = url;
   const norm = normalizeUrl(url);
-  const dup = db.prepare(tiktokWithNames).all()
+  const dup = db.prepare(tiktokWithNames + ' WHERE t.deleted_at IS NULL').all()
     .find((t) => normalizeUrl(t.url) === norm || (info.tiktok_id && t.tiktok_id === info.tiktok_id));
   res.json({ ...info, duplicate: dup || null });
 });
@@ -617,7 +617,7 @@ app.post('/api/tiktok', auth, async (req, res) => {
   if (!url) return res.status(400).json({ error: 'Thiếu link/ID TikTok' });
   url = toTiktokUrl(url);
   const norm = normalizeUrl(url);
-  const all = db.prepare(tiktokWithNames).all();
+  const all = db.prepare(tiktokWithNames + ' WHERE t.deleted_at IS NULL').all();
   const dup = all.find((t) => normalizeUrl(t.url) === norm || (tiktok_id && t.tiktok_id === tiktok_id));
   if (dup) return res.status(409).json({ error: 'duplicate', channel: dup });
   // Tên nhanh từ handle để hiện ngay; số liệu thiếu sẽ được lấy ở nền
@@ -647,7 +647,7 @@ app.post('/api/tiktok/bulk', auth, (req, res) => {
   const { urls, country, status } = req.body || {};
   const list = (Array.isArray(urls) ? urls : String(urls || '').split(/\r?\n/)).map((s) => toTiktokUrl(String(s).trim())).filter(Boolean);
   if (!list.length) return res.status(400).json({ error: 'Chưa dán link nào' });
-  const existNorms = new Set(db.prepare('SELECT url FROM tiktok_channels').all().map((t) => normalizeUrl(t.url)));
+  const existNorms = new Set(db.prepare('SELECT url FROM tiktok_channels WHERE deleted_at IS NULL').all().map((t) => normalizeUrl(t.url)));
   let added = 0, skipped = 0; const newIds = [];
   for (const url of list) {
     const norm = normalizeUrl(url);
@@ -669,10 +669,10 @@ app.post('/api/tiktok/delete-many', auth, (req, res) => {
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Chưa chọn kênh nào' });
   const getName = db.prepare('SELECT name FROM tiktok_channels WHERE id = ?');
   const names = ids.map((id) => getName.get(id)).filter(Boolean).map((r) => r.name);
-  const stmt = db.prepare('DELETE FROM tiktok_channels WHERE id = ?');
+  const stmt = db.prepare("UPDATE tiktok_channels SET deleted_at = datetime('now') WHERE id = ? AND deleted_at IS NULL");
   let n = 0;
   db.transaction((arr) => { for (const id of arr) n += stmt.run(id).changes; })(ids);
-  logActivity(req, 'delete', `Xóa ${n} kênh TikTok: ${namesLabel(names)}`);
+  logActivity(req, 'delete', `Xóa ${n} kênh TikTok (vào thùng rác): ${namesLabel(names)}`);
   res.json({ deleted: n });
 });
 
@@ -721,8 +721,8 @@ app.post('/api/tiktok/:id/sync', auth, async (req, res) => {
 
 app.delete('/api/tiktok/:id', auth, (req, res) => {
   const t = db.prepare('SELECT name FROM tiktok_channels WHERE id = ?').get(req.params.id);
-  db.prepare('DELETE FROM tiktok_channels WHERE id = ?').run(req.params.id);
-  logActivity(req, 'delete', `Xóa kênh TikTok "${t ? t.name : req.params.id}"`);
+  db.prepare("UPDATE tiktok_channels SET deleted_at = datetime('now') WHERE id = ?").run(req.params.id);
+  logActivity(req, 'delete', `Xóa kênh TikTok "${t ? t.name : req.params.id}" (vào thùng rác)`);
   res.json({ ok: true });
 });
 
@@ -733,8 +733,8 @@ async function syncAllTiktok(userId) {
   if (syncing) return;
   syncing = true;
   const chans = userId
-    ? db.prepare('SELECT id, url FROM tiktok_channels WHERE assigned_to=? OR added_by=?').all(userId, userId)
-    : db.prepare('SELECT id, url FROM tiktok_channels').all();
+    ? db.prepare('SELECT id, url FROM tiktok_channels WHERE deleted_at IS NULL AND (assigned_to=? OR added_by=?)').all(userId, userId)
+    : db.prepare('SELECT id, url FROM tiktok_channels WHERE deleted_at IS NULL').all();
   lastSync = { at: new Date().toISOString(), total: chans.length, ok: 0, running: true };
   try {
     for (const c of chans) {
@@ -891,6 +891,44 @@ app.delete('/api/activity', auth, adminOnly, (req, res) => {
   res.json({ ok: true });
 });
 
+// ============ THÙNG RÁC (admin) ============
+app.get('/api/trash', auth, adminOnly, (req, res) => {
+  const keys = db.prepare(keyWithNames + ' WHERE k.deleted_at IS NOT NULL ORDER BY k.deleted_at DESC').all();
+  const tiktok = db.prepare(tiktokWithNames + ' WHERE t.deleted_at IS NOT NULL ORDER BY t.deleted_at DESC').all();
+  res.json({ keys, tiktok });
+});
+app.post('/api/trash/restore', auth, adminOnly, (req, res) => {
+  const { type, ids } = req.body || {};
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Chưa chọn mục nào' });
+  const table = type === 'tiktok' ? 'tiktok_channels' : 'keys';
+  const stmt = db.prepare(`UPDATE ${table} SET deleted_at = NULL WHERE id = ?`);
+  let n = 0; db.transaction((a) => { for (const id of a) n += stmt.run(id).changes; })(ids);
+  logActivity(req, 'other', `Khôi phục ${n} ${type === 'tiktok' ? 'kênh TikTok' : 'key'} từ thùng rác`);
+  res.json({ restored: n });
+});
+app.post('/api/trash/purge', auth, adminOnly, (req, res) => {
+  const { type, ids } = req.body || {};
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Chưa chọn mục nào' });
+  const table = type === 'tiktok' ? 'tiktok_channels' : 'keys';
+  const stmt = db.prepare(`DELETE FROM ${table} WHERE id = ? AND deleted_at IS NOT NULL`);
+  let n = 0; db.transaction((a) => { for (const id of a) n += stmt.run(id).changes; })(ids);
+  logActivity(req, 'delete', `Xóa vĩnh viễn ${n} ${type === 'tiktok' ? 'kênh TikTok' : 'key'}`);
+  res.json({ purged: n });
+});
+app.delete('/api/trash', auth, adminOnly, (req, res) => {
+  const k = db.prepare('DELETE FROM keys WHERE deleted_at IS NOT NULL').run().changes;
+  const t = db.prepare('DELETE FROM tiktok_channels WHERE deleted_at IS NOT NULL').run().changes;
+  logActivity(req, 'delete', `Dọn sạch thùng rác (${k} key + ${t} kênh TikTok)`);
+  res.json({ ok: true, deleted: k + t });
+});
+
+// ============ SAO LƯU DỮ LIỆU (admin tải file .db về máy) ============
+app.get('/api/backup', auth, adminOnly, (req, res) => {
+  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch (_) {}
+  const d = new Date().toISOString().slice(0, 10);
+  res.download(db.name, `reup-backup-${d}.db`);
+});
+
 // ============ THỐNG KÊ DASHBOARD ============
 app.get('/api/stats', auth, (req, res) => {
   const monthStart = new Date().toISOString().slice(0, 7) + '-01';
@@ -899,15 +937,15 @@ app.get('/api/stats', auth, (req, res) => {
 
   // Key theo trạng thái
   const keyStatus = { todo: 0, doing: 0 };
-  db.prepare('SELECT status, COUNT(*) c FROM keys GROUP BY status').all()
+  db.prepare('SELECT status, COUNT(*) c FROM keys WHERE deleted_at IS NULL GROUP BY status').all()
     .forEach((r) => { if (keyStatus[r.status] != null) keyStatus[r.status] = r.c; });
   const totalKeys = Object.values(keyStatus).reduce((a, b) => a + b, 0);
-  const keysAssigned = db.prepare('SELECT COUNT(*) c FROM keys WHERE id IN (SELECT DISTINCT key_id FROM key_workers)').get().c;
+  const keysAssigned = db.prepare('SELECT COUNT(*) c FROM keys WHERE deleted_at IS NULL AND id IN (SELECT DISTINCT key_id FROM key_workers)').get().c;
   const keysUnassigned = totalKeys - keysAssigned;
-  const myKeys = db.prepare('SELECT COUNT(DISTINCT key_id) c FROM key_workers WHERE user_id = ?').get(me).c;
+  const myKeys = db.prepare('SELECT COUNT(DISTINCT kw.key_id) c FROM key_workers kw JOIN keys k ON k.id = kw.key_id WHERE kw.user_id = ? AND k.deleted_at IS NULL').get(me).c;
 
   // TikTok — admin xem tất cả, nhân viên chỉ của mình
-  const ttScope = isAdmin ? '' : ` WHERE assigned_to = ${me} OR added_by = ${me}`;
+  const ttScope = isAdmin ? ' WHERE deleted_at IS NULL' : ` WHERE deleted_at IS NULL AND (assigned_to = ${me} OR added_by = ${me})`;
   const tt = db.prepare(`SELECT COUNT(*) c, COALESCE(SUM(followers),0) f, COALESCE(SUM(likes),0) l, COALESCE(SUM(video_count),0) v, COALESCE(SUM(total_views),0) views FROM tiktok_channels${ttScope}`).get();
   const tiktok = { channels: tt.c, followers: tt.f, likes: tt.l, videos: tt.v, views: tt.views };
 
@@ -916,7 +954,7 @@ app.get('/api/stats', auth, (req, res) => {
     SELECT t.id, t.name, t.followers, t.likes, t.video_count, t.total_views, t.country, t.status,
            COALESCE(u.name,'(chưa giao)') AS owner
     FROM tiktok_channels t LEFT JOIN users u ON u.id = t.assigned_to
-    ${isAdmin ? '' : `WHERE t.assigned_to = ${me} OR t.added_by = ${me}`}
+    WHERE t.deleted_at IS NULL ${isAdmin ? '' : `AND (t.assigned_to = ${me} OR t.added_by = ${me})`}
     ORDER BY t.created_at ASC`).all();
   const map = {};
   chans.forEach((c) => {

@@ -110,7 +110,8 @@ function closeModal() { $('#modal-overlay').classList.add('hidden'); }
 
 // Khóa nút "submit" khi đang xử lý (chống bấm nhiều lần -> thêm trùng)
 function lockBtn(form) {
-  const b = form.querySelector('button[type="submit"]');
+  // chấp nhận cả <form> (khóa nút submit) lẫn 1 <button> truyền thẳng vào
+  const b = (form && form.tagName === 'BUTTON') ? form : (form && form.querySelector ? form.querySelector('button[type="submit"]') : null);
   if (!b) return () => {};
   b.disabled = true;
   const orig = b.innerHTML;
@@ -185,6 +186,7 @@ function buildNav() {
     items.push({ id: 'staff', icon: '👥', label: 'Nhân sự' });
     items.push({ id: 'finance', icon: '💰', label: 'Lợi nhuận' });
     items.push({ id: 'activity', icon: '📜', label: 'Lịch sử' });
+    items.push({ id: 'trash', icon: '🗑️', label: 'Thùng rác' });
   }
   items.push({ id: 'settings', icon: '⚙️', label: 'Cài đặt' });
 
@@ -197,7 +199,7 @@ function buildNav() {
   });
 }
 
-const PAGE_TITLES = { dashboard: 'Tổng quan', keys: 'Key YouTube', tiktok: 'Kênh TikTok', videos: 'Nhật ký video', staff: 'Nhân sự', finance: 'Lợi nhuận', activity: 'Lịch sử thao tác', settings: 'Cài đặt' };
+const PAGE_TITLES = { dashboard: 'Tổng quan', keys: 'Key YouTube', tiktok: 'Kênh TikTok', videos: 'Nhật ký video', staff: 'Nhân sự', finance: 'Lợi nhuận', activity: 'Lịch sử thao tác', trash: 'Thùng rác', settings: 'Cài đặt' };
 
 // Điều hướng có lưu lịch sử (để nút "quay lại" của chuột/trình duyệt hoạt động)
 function navigate(page) {
@@ -205,7 +207,7 @@ function navigate(page) {
   else location.hash = '#' + page; // đổi hash -> sự kiện hashchange -> renderPage
 }
 
-const ADMIN_PAGES = ['staff', 'finance', 'activity'];
+const ADMIN_PAGES = ['staff', 'finance', 'activity', 'trash'];
 function renderPage(page) {
   if (!PAGE_TITLES[page]) page = 'dashboard';
   // CHẶN nhân viên vào trang dành riêng admin (kể cả khi gõ tay #staff)
@@ -218,7 +220,7 @@ function renderPage(page) {
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.page === page));
   $('#topbar-right').innerHTML = '';
   closeMenu();
-  const renderers = { dashboard: renderDashboard, keys: renderKeys, tiktok: renderTiktok, videos: renderVideos, staff: renderStaff, finance: renderFinance, activity: renderActivity, settings: renderSettings };
+  const renderers = { dashboard: renderDashboard, keys: renderKeys, tiktok: renderTiktok, videos: renderVideos, staff: renderStaff, finance: renderFinance, activity: renderActivity, trash: renderTrash, settings: renderSettings };
   (renderers[page] || renderDashboard)();
 }
 
@@ -1431,6 +1433,81 @@ async function renderActivity() {
     : '<div class="empty"><div class="empty-icon">📜</div>Chưa có thao tác nào được ghi.</div>';
 }
 
+// ============ THÙNG RÁC ============
+async function renderTrash() {
+  $('#topbar-right').innerHTML = '';
+  const view = $('#view');
+  view.innerHTML = '<div class="loading">Đang tải thùng rác…</div>';
+  let data;
+  try { data = await api('/trash'); } catch (e) { view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+
+  const keys = data.keys || [], tiktok = data.tiktok || [];
+  const total = keys.length + tiktok.length;
+  if (!total) {
+    view.innerHTML = '<div class="empty"><div class="empty-icon">🗑️</div>Thùng rác trống. Mọi thứ bạn xóa sẽ vào đây và có thể khôi phục trong 30 ngày.</div>';
+    return;
+  }
+
+  // nút dọn sạch toàn bộ
+  const emptyBtn = el('<button class="btn btn-ghost">🧹 Dọn sạch thùng rác</button>');
+  emptyBtn.onclick = async () => {
+    if (!confirm('XÓA VĨNH VIỄN toàn bộ thùng rác? Không thể khôi phục lại được.')) return;
+    try { const r = await api('/trash', { method: 'DELETE' }); toast(`Đã xóa vĩnh viễn ${r.deleted} mục`); renderTrash(); } catch (e) { toast(e.message, 'err'); }
+  };
+  $('#topbar-right').appendChild(emptyBtn);
+
+  // dựng một khối danh sách cho từng loại (type = 'keys' | 'tiktok')
+  const section = (title, icon, type, rows, nameOf, subOf) => {
+    if (!rows.length) return '';
+    const items = rows.map((r) => `
+      <tr>
+        <td class="chk-col"><input type="checkbox" class="trash-chk" data-type="${type}" value="${r.id}"></td>
+        <td><b>${esc(nameOf(r))}</b><div class="cell-sub">${subOf(r)}</div></td>
+        <td class="nowrap cell-sub">🗑️ ${timeAgo(r.deleted_at)}</td>
+      </tr>`).join('');
+    return `
+      <div class="panel">
+        <div class="panel-title">${icon} ${title} (${rows.length})</div>
+        <div class="trash-actions" style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+          <button class="btn btn-sm btn-ghost" data-sel="${type}" data-all="1">Chọn tất cả</button>
+          <button class="btn btn-sm btn-primary" data-restore="${type}">↩️ Khôi phục đã chọn</button>
+          <button class="btn btn-sm btn-ghost" data-purge="${type}" style="color:#ef4444">✖ Xóa vĩnh viễn đã chọn</button>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr><th class="chk-col"></th><th>${title}</th><th>Đã xóa</th></tr></thead>
+          <tbody>${items}</tbody></table></div>
+      </div>`;
+  };
+
+  view.innerHTML =
+    `<div class="muted" style="margin-bottom:12px">Các mục trong thùng rác sẽ tự động xóa vĩnh viễn sau 30 ngày.</div>` +
+    section('Key YouTube', '🔑', 'keys', keys, (r) => r.channel_name || r.url, (r) => esc(r.category || r.country || '')) +
+    section('Kênh TikTok', '📱', 'tiktok', tiktok, (r) => r.name || r.url, (r) => esc((r.tiktok_id ? '@' + r.tiktok_id : '') + (r.country ? ' · ' + r.country : '')));
+
+  const idsOf = (type) => Array.from(view.querySelectorAll(`.trash-chk[data-type="${type}"]:checked`)).map((c) => Number(c.value));
+
+  view.querySelectorAll('[data-sel]').forEach((b) => b.onclick = () => {
+    const boxes = view.querySelectorAll(`.trash-chk[data-type="${b.dataset.sel}"]`);
+    const allChecked = Array.from(boxes).every((c) => c.checked);
+    boxes.forEach((c) => { c.checked = !allChecked; });
+  });
+  view.querySelectorAll('[data-restore]').forEach((b) => b.onclick = async () => {
+    const type = b.dataset.restore, ids = idsOf(type);
+    if (!ids.length) return toast('Chưa chọn mục nào', 'err');
+    const unlock = lockBtn(b);
+    try { const r = await api('/trash/restore', { method: 'POST', body: { type, ids } }); toast(`Đã khôi phục ${r.restored} mục`); keysCache = []; tiktokCache = []; renderTrash(); }
+    catch (e) { toast(e.message, 'err'); } finally { unlock(); }
+  });
+  view.querySelectorAll('[data-purge]').forEach((b) => b.onclick = async () => {
+    const type = b.dataset.purge, ids = idsOf(type);
+    if (!ids.length) return toast('Chưa chọn mục nào', 'err');
+    if (!confirm(`XÓA VĨNH VIỄN ${ids.length} mục đã chọn? Không thể khôi phục.`)) return;
+    const unlock = lockBtn(b);
+    try { const r = await api('/trash/purge', { method: 'POST', body: { type, ids } }); toast(`Đã xóa vĩnh viễn ${r.purged} mục`); renderTrash(); }
+    catch (e) { toast(e.message, 'err'); } finally { unlock(); }
+  });
+}
+
 // ============ SETTINGS ============
 function renderSettings() {
   const view = $('#view');
@@ -1447,7 +1524,13 @@ function renderSettings() {
       <div class="panel-title">Thông tin tài khoản</div>
       <p><b>${esc(State.user.name)}</b> (@${esc(State.user.username)})</p>
       <p class="muted">Vai trò: ${State.user.role === 'admin' ? 'Quản trị viên' : 'Nhân sự'}</p>
-    </div>`;
+    </div>
+    ${State.user.role === 'admin' ? `
+    <div class="panel" style="max-width:520px">
+      <div class="panel-title">💾 Sao lưu dữ liệu</div>
+      <p class="muted" style="margin-bottom:12px">Tải toàn bộ dữ liệu (key, kênh TikTok, nhân sự, lịch sử…) về máy thành 1 file. Giữ kỹ file này để khôi phục khi cần.</p>
+      <button id="backup-btn" class="btn btn-primary">⬇️ Tải file sao lưu</button>
+    </div>` : ''}`;
   $('#pw-form').onsubmit = async (e) => {
     e.preventDefault();
     const unlock = lockBtn($('#pw-form'));
@@ -1455,6 +1538,21 @@ function renderSettings() {
       await api('/me/password', { method: 'POST', body: { oldPassword: $('#pw-old').value, newPassword: $('#pw-new').value } });
       toast('Đã đổi mật khẩu'); $('#pw-form').reset();
     } catch (err) { toast(err.message, 'err'); } finally { unlock(); }
+  };
+  const bk = $('#backup-btn');
+  if (bk) bk.onclick = async () => {
+    const unlock = lockBtn(bk);
+    try {
+      const res = await fetch('/api/backup', { cache: 'no-store', headers: { Authorization: 'Bearer ' + State.token } });
+      if (!res.ok) throw new Error('Không tải được file sao lưu');
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `reup-backup-${todayStr()}.db`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      toast('Đã tải file sao lưu');
+    } catch (e) { toast(e.message, 'err'); } finally { unlock(); }
   };
 }
 

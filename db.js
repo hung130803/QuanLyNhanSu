@@ -165,6 +165,14 @@ addTtCol('paypal_added', 'INTEGER NOT NULL DEFAULT 0');
 addTtCol('verified', 'INTEGER NOT NULL DEFAULT 0');
 
 addKeyCol('country', 'TEXT'); // quốc gia của key (nước kiếm tiền: US, JP, KR...)
+addKeyCol('deleted_at', 'TEXT'); // thùng rác: NULL = đang dùng, có giá trị = đã xóa
+addTtCol('deleted_at', 'TEXT');
+
+// Tự dọn thùng rác: xóa hẳn những thứ đã ở thùng rác quá 30 ngày
+try {
+  db.prepare("DELETE FROM keys WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now','-30 days')").run();
+  db.prepare("DELETE FROM tiktok_channels WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now','-30 days')").run();
+} catch (_) {}
 
 // Thêm cột theo dõi đăng nhập cho users
 const userCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
