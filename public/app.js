@@ -712,18 +712,18 @@ function drawKeys() {
     if (k.subscribers) subInfo.push(`<span class="ch-sub-tag">👥 ${esc(k.subscribers)}</span>`);
     return `<tr class="${k.quality === 'ngon' ? 'row-ngon' : ''}">
       <td class="chk-col"><input type="checkbox" class="k-row-chk" value="${k.id}" ${keysSelected.has(k.id) ? 'checked' : ''}></td>
-      <td class="cat-cell">${k.category ? `<span class="cat-tag" style="${chipStyle(k.category)}">${esc(k.category)}</span>` : '<span class="muted">—</span>'}</td>
-      <td><div class="cell-channel">${thumb}<div>
+      <td data-label="Chủ đề" class="cat-cell">${k.category ? `<span class="cat-tag" style="${chipStyle(k.category)}">${esc(k.category)}</span>` : '<span class="muted">—</span>'}</td>
+      <td class="cell-main"><div class="cell-channel">${thumb}<div>
         <a href="${esc(k.url)}" target="_blank" rel="noopener" title="Bấm mở kênh">${esc(k.channel_name)}</a>
         <div class="cell-sub">${subInfo.join(' ')}</div>
         <div class="cell-url">${esc((k.url || '').replace(/^https?:\/\//, '').replace(/^www\./, '').slice(0, 46))}</div>
       </div></div></td>
-      <td><span class="badge ${k.status}">${st.icon} ${st.label}</span></td>
-      <td>${amWorker(k)
+      <td data-label="Trạng thái"><span class="badge ${k.status}">${st.icon} ${st.label}</span></td>
+      <td data-label="Người làm">${amWorker(k)
         ? `<button class="btn-link" data-release="${k.id}">↩ tôi bỏ làm</button>`
         : `<button class="btn btn-sm btn-primary" data-claim="${k.id}">✋ Nhận làm</button>`}${k.worker_count > 0 ? `<div class="workers">👥 ${esc(k.worker_names || '')}</div>` : ''}</td>
-      <td class="nowrap cell-sub">${esc(k.added_name || '')}<br>${fmtDate(k.created_at)}</td>
-      <td><div class="row-actions">
+      <td data-label="Người thêm" class="nowrap cell-sub">${esc(k.added_name || '')}<br>${fmtDate(k.created_at)}</td>
+      <td class="cell-actions"><div class="row-actions">
         <button class="btn-icon" data-info="${k.id}" title="Xem nội dung kênh">👁️</button>
         <button class="btn-icon" data-edit="${k.id}" title="Sửa">✏️</button>
         <button class="btn-icon" data-del="${k.id}" title="Xóa">🗑️</button>
@@ -746,7 +746,7 @@ function drawKeys() {
       </select>
     </div>
     <div class="filter-tabs">${tabsHtml}</div>
-    ${list.length ? `<div class="table-wrap"><table>
+    ${list.length ? `<div class="table-wrap cards"><table>
       <thead><tr><th class="chk-col"><input type="checkbox" id="k-checkall" title="Chọn tất cả (trang này)"></th><th class="cat-cell">Chủ đề</th><th>Kênh / Key</th><th>Trạng thái</th><th>Người làm</th><th>Người thêm</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table></div>${pg.html}`
       : '<div class="empty"><div class="empty-icon">🔑</div>Không có key nào khớp bộ lọc.</div>'}`;
@@ -1073,21 +1073,21 @@ function drawTiktok() {
     return `<tr>
       <td class="chk-col"><input type="checkbox" class="tt-row-chk" value="${t.id}" ${ttSelected.has(t.id) ? 'checked' : ''}></td>
       <td class="stt">${idx + 1}</td>
-      <td><div class="cell-channel">${av}<div>
+      <td class="cell-main"><div class="cell-channel">${av}<div>
         <a href="${esc(t.url)}" target="_blank" rel="noopener" title="Bấm mở kênh">${esc(t.name)}</a>
         <div class="cell-sub">${t.tiktok_id ? '@' + esc(t.tiktok_id) : ''}</div>
         <div class="cell-url">${esc((t.url || '').replace(/^https?:\/\//, '').replace(/^www\./, '').slice(0, 42))}</div>
         ${t.note ? `<div class="cell-note">📝 ${esc(t.note)}</div>` : ''}
         ${monetizeChips(t)}
       </div></div></td>
-      <td><b class="text-accent">${fmtCompact(t.followers)}</b>${deltaBadge(deltaOf(t.followers, t.prev_followers), true)}</td>
-      <td><b class="text-danger">${fmtCompact(t.likes)}</b>${deltaBadge(deltaOf(t.likes, t.prev_likes), true)}</td>
-      <td>${fmtNum(t.video_count)}${deltaBadge(deltaOf(t.video_count, t.prev_videos), false)}</td>
-      <td><span class="badge ${st.cls}">${st.label}</span></td>
-      <td class="nowrap cell-sub">${t.source_key_name ? esc(t.source_key_name) : '<span class="muted">—</span>'}</td>
-      <td class="nowrap">${t.assigned_name ? esc(t.assigned_name) : '<span class="muted">—</span>'}</td>
-      <td class="nowrap cell-sub">${fmtDateTime(t.created_at)}</td>
-      <td><div class="row-actions">
+      <td data-label="Follow"><b class="text-accent">${fmtCompact(t.followers)}</b>${deltaBadge(deltaOf(t.followers, t.prev_followers), true)}</td>
+      <td data-label="Tym"><b class="text-danger">${fmtCompact(t.likes)}</b>${deltaBadge(deltaOf(t.likes, t.prev_likes), true)}</td>
+      <td data-label="Video">${fmtNum(t.video_count)}${deltaBadge(deltaOf(t.video_count, t.prev_videos), false)}</td>
+      <td data-label="Trạng thái"><span class="badge ${st.cls}">${st.label}</span></td>
+      <td data-label="Key nguồn" class="nowrap cell-sub">${t.source_key_name ? esc(t.source_key_name) : '<span class="muted">—</span>'}</td>
+      <td data-label="Giao cho" class="nowrap">${t.assigned_name ? esc(t.assigned_name) : '<span class="muted">—</span>'}</td>
+      <td data-label="Ngày thêm" class="nowrap cell-sub">${fmtDateTime(t.created_at)}</td>
+      <td class="cell-actions"><div class="row-actions">
         <button class="btn-icon" data-ttsync="${t.id}" title="Cập nhật số liệu">🔄</button>
         <button class="btn-icon" data-ttinfo="${t.id}" title="Chi tiết">👁️</button>
         <button class="btn-icon" data-ttedit="${t.id}" title="Sửa">✏️</button>
@@ -1127,7 +1127,7 @@ function drawTiktok() {
         <span class="country-stat">👥 ${fmtCompact(gf)}</span>
         <span class="country-stat">❤️ ${fmtCompact(gl)}</span>
       </div>
-      ${collapsed ? '' : `<div class="table-wrap country-table"><table>${thead}<tbody>${shown.map((t, i) => rowHtml(t, i)).join('')}</tbody></table></div>${moreBtn}`}
+      ${collapsed ? '' : `<div class="table-wrap country-table cards"><table>${thead}<tbody>${shown.map((t, i) => rowHtml(t, i)).join('')}</tbody></table></div>${moreBtn}`}
     </div>`;
   }).join('');
 
@@ -1545,11 +1545,11 @@ function drawGrowth(data, expBtn) {
     const stalled = (g === 0) ? ' <span class="muted" title="Chưa tăng">⚠️</span>' : '';
     return `<tr data-ttgo3="${c.id}" class="selectable-row">
       <td class="stt">${i + 1}</td>
-      <td><b>${esc(c.name)}</b> ${flag(c.country)}${fire}${stalled}<div class="cell-sub">${c.tiktok_id ? '@' + esc(c.tiktok_id) : ''}</div></td>
-      <td><b class="text-accent">${fmtCompact(c.followers)}</b></td>
-      <td>${badge}${pct}</td>
-      <td class="cell-sub nowrap">${rate}</td>
-      <td>${c.videoGrowth != null ? deltaBadge(c.videoGrowth, false) : '<span class="muted">—</span>'}</td>
+      <td class="cell-main"><b>${esc(c.name)}</b> ${flag(c.country)}${fire}${stalled}<div class="cell-sub">${c.tiktok_id ? '@' + esc(c.tiktok_id) : ''}</div></td>
+      <td data-label="Follow"><b class="text-accent">${fmtCompact(c.followers)}</b></td>
+      <td data-label="Tăng ${days === 1 ? 'hôm nay' : days + ' ngày'}">${badge}${pct}</td>
+      <td data-label="Tốc độ" class="cell-sub nowrap">${rate}</td>
+      <td data-label="Video mới">${c.videoGrowth != null ? deltaBadge(c.videoGrowth, false) : '<span class="muted">—</span>'}</td>
     </tr>`;
   };
 
@@ -1558,7 +1558,7 @@ function drawGrowth(data, expBtn) {
     <div class="panel">
       <div class="panel-title">👤 ${esc(g.owner)} <span class="muted" style="font-weight:400;font-size:13px">· ${g.items.length} kênh · tổng ${g.total >= 0 ? '+' : '−'}${fmtCompact(Math.abs(g.total))} follow</span>
         ${g.ownerId != null ? `<a class="btn-link" data-ttuser="${g.ownerId}" style="float:right;font-weight:400">mở danh sách →</a>` : ''}</div>
-      <div class="table-wrap"><table>${thead}<tbody>${g.items.map(rowHtml).join('')}</tbody></table></div>
+      <div class="table-wrap cards"><table>${thead}<tbody>${g.items.map(rowHtml).join('')}</tbody></table></div>
     </div>`).join('');
 
   view.innerHTML = `

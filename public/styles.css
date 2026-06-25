@@ -796,4 +796,41 @@ body.light .table-wrap, body.light .country-group { box-shadow: var(--shadow-sm)
   .cc-count { font-size: 22px; }
   .cc-flag { font-size: 28px; }
   .cc-grid { grid-template-columns: 1fr; }
+  /* iOS: nền cố định gây giật khi cuộn -> cho cuộn theo trang */
+  body, body.light { background-attachment: scroll; }
+}
+
+/* ============================================================
+   ĐIỆN THOẠI: bảng dữ liệu -> DẠNG THẺ (không tràn ngang, thấy rõ tăng/giảm)
+   Chỉ áp dụng cho bảng có class .cards (TikTok / Tăng trưởng / Key)
+   ============================================================ */
+@media (max-width: 720px) {
+  .table-wrap.cards { overflow-x: visible; border: none; background: none; box-shadow: none; }
+  .table-wrap.cards table, .table-wrap.cards tbody, .table-wrap.cards tr, .table-wrap.cards td { display: block; width: 100%; }
+  .table-wrap.cards thead { display: none; }
+  .table-wrap.cards tr {
+    border: 1px solid var(--border); border-radius: 14px; margin-bottom: 12px; padding: 12px 14px;
+    background: linear-gradient(180deg, rgba(255,255,255,.022), transparent 42%), var(--card);
+    box-shadow: var(--inset-hi), var(--shadow-sm);
+  }
+  .table-wrap.cards td {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    border: none !important; padding: 6px 0; text-align: right; white-space: normal;
+  }
+  /* Nhãn cột hiện bên trái mỗi dòng (lấy từ data-label) */
+  .table-wrap.cards td[data-label]::before {
+    content: attr(data-label); color: var(--text-dim); font-weight: 600; font-size: 12px;
+    text-align: left; white-space: nowrap; flex-shrink: 0;
+  }
+  /* Ô tên kênh = tiêu đề thẻ (full chiều ngang, không nhãn) */
+  .table-wrap.cards td.cell-main { border-bottom: 1px dashed var(--border); padding-bottom: 10px; margin-bottom: 4px; text-align: left; }
+  .table-wrap.cards td.cell-main .cell-channel { width: 100%; }
+  .table-wrap.cards td.cell-main .cell-url { display: none; }
+  /* Ẩn cột checkbox & số thứ tự trên điện thoại cho gọn */
+  .table-wrap.cards td.chk-col, .table-wrap.cards td.stt { display: none; }
+  /* Hàng nút thao tác: dồn về phải */
+  .table-wrap.cards td.cell-actions { padding-top: 10px; justify-content: flex-end; }
+  .table-wrap.cards td.cell-actions .row-actions { width: 100%; justify-content: flex-end; }
+  /* Các bảng KHÁC (báo cáo, lợi nhuận...) vẫn cuộn ngang gọn */
+  .table-wrap:not(.cards) { overflow-x: auto; }
 }
