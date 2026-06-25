@@ -50,6 +50,19 @@ function token() {
   return crypto.randomBytes(24).toString('hex');
 }
 
+// Bảo mật phiên đăng nhập (tự đăng xuất)
+const SESSION_MAX_DAYS = Number(process.env.SESSION_MAX_DAYS) || 30;   // tối đa kể từ lúc đăng nhập
+const SESSION_IDLE_DAYS = Number(process.env.SESSION_IDLE_DAYS) || 7;  // tự đăng xuất nếu lâu không dùng
+const msFromSql = (s) => (s ? Date.parse(s.replace(' ', 'T') + 'Z') : 0);
+
+// Quy tắc mật khẩu mạnh (ít nhất 8 ký tự, gồm cả chữ và số) — chống dò mật khẩu
+function passwordError(pw) {
+  pw = String(pw || '');
+  if (pw.length < 8) return 'Mật khẩu phải có ít nhất 8 ký tự';
+  if (!/[a-zA-Z]/.test(pw) || !/[0-9]/.test(pw)) return 'Mật khẩu phải gồm cả chữ và số';
+  return null;
+}
+
 // Ghi lịch sử thao tác (ai làm gì, lúc nào)
 function logActivity(req, kind, message) {
   try {
@@ -248,18 +261,30 @@ function auth(req, res, next) {
   if (!tok) return res.status(401).json({ error: 'Chưa đăng nhập' });
   const row = db
     .prepare(
-      `SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?`
+      `SELECT u.*, s.created_at AS sess_created, s.last_seen AS sess_seen
+       FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?`
     )
     .get(tok);
   if (!row || !row.active)
     return res.status(401).json({ error: 'Phiên hết hạn, đăng nhập lại' });
+  // Tự đăng xuất: quá hạn tuyệt đối (30 ngày) hoặc lâu không dùng (7 ngày)
+  const now = Date.now();
+  const createdMs = msFromSql(row.sess_created);
+  const seenMs = msFromSql(row.sess_seen) || createdMs;
+  const expired = (createdMs && now - createdMs > SESSION_MAX_DAYS * 86400000)
+    || (seenMs && now - seenMs > SESSION_IDLE_DAYS * 86400000);
+  if (expired) {
+    try { db.prepare('DELETE FROM sessions WHERE token = ?').run(tok); } catch (_) {}
+    return res.status(401).json({ error: 'Phiên đã hết hạn, vui lòng đăng nhập lại' });
+  }
   req.user = row;
   req.token = tok;
-  // Cập nhật "hoạt động lần cuối" (tối đa 1 lần/phút để khỏi ghi liên tục)
-  const now = Date.now();
-  const lastMs = row.last_active ? new Date(row.last_active.replace(' ', 'T') + 'Z').getTime() : 0;
-  if (!lastMs || now - lastMs > 60000) {
-    try { db.prepare("UPDATE users SET last_active = datetime('now') WHERE id = ?").run(row.id); } catch (_) {}
+  // Cập nhật "hoạt động lần cuối" của user + phiên (tối đa 1 lần/phút để khỏi ghi liên tục)
+  if (!seenMs || now - seenMs > 60000) {
+    try {
+      db.prepare("UPDATE users SET last_active = datetime('now') WHERE id = ?").run(row.id);
+      db.prepare("UPDATE sessions SET last_seen = datetime('now') WHERE token = ?").run(tok);
+    } catch (_) {}
   }
   next();
 }
@@ -291,7 +316,7 @@ app.post('/api/login', loginLimiter, (req, res) => {
   }
   if (!u.active) return res.status(403).json({ error: 'Tài khoản đã bị khóa' });
   const tok = token();
-  db.prepare('INSERT INTO sessions (token, user_id) VALUES (?, ?)').run(tok, u.id);
+  db.prepare("INSERT INTO sessions (token, user_id, last_seen) VALUES (?, ?, datetime('now'))").run(tok, u.id);
   db.prepare("UPDATE users SET last_login = datetime('now'), last_active = datetime('now') WHERE id = ?").run(u.id);
   res.json({ token: tok, user: publicUser(u) });
 });
@@ -305,14 +330,16 @@ app.get('/api/me', auth, (req, res) => res.json({ user: publicUser(req.user) }))
 
 app.post('/api/me/password', auth, (req, res) => {
   const { oldPassword, newPassword } = req.body || {};
-  if (!newPassword || newPassword.length < 4)
-    return res.status(400).json({ error: 'Mật khẩu mới tối thiểu 4 ký tự' });
+  const pwErr = passwordError(newPassword);
+  if (pwErr) return res.status(400).json({ error: pwErr });
   if (!bcrypt.compareSync(oldPassword || '', req.user.password_hash))
     return res.status(400).json({ error: 'Mật khẩu cũ không đúng' });
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(
     bcrypt.hashSync(newPassword, 10),
     req.user.id
   );
+  // Bảo mật: đăng xuất tất cả thiết bị khác sau khi đổi mật khẩu (giữ phiên hiện tại)
+  try { db.prepare('DELETE FROM sessions WHERE user_id = ? AND token != ?').run(req.user.id, req.token); } catch (_) {}
   res.json({ ok: true });
 });
 
@@ -328,6 +355,8 @@ app.post('/api/users', auth, adminOnly, (req, res) => {
   const { username, password, name, role } = req.body || {};
   if (!username || !password || !name)
     return res.status(400).json({ error: 'Thiếu thông tin' });
+  const pwErr = passwordError(password);
+  if (pwErr) return res.status(400).json({ error: pwErr });
   const exists = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
   if (exists) return res.status(400).json({ error: 'Tên đăng nhập đã tồn tại' });
   const info = db
@@ -349,11 +378,16 @@ app.put('/api/users/:id', auth, adminOnly, (req, res) => {
     active != null ? (active ? 1 : 0) : u.active,
     u.id
   );
-  if (password)
+  if (password) {
+    const pwErr = passwordError(password);
+    if (pwErr) return res.status(400).json({ error: pwErr });
     db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(
       bcrypt.hashSync(password, 10),
       u.id
     );
+    // Đặt lại mật khẩu -> buộc nhân sự đó đăng nhập lại trên mọi thiết bị
+    try { db.prepare('DELETE FROM sessions WHERE user_id = ?').run(u.id); } catch (_) {}
+  }
   logActivity(req, 'edit', `Sửa nhân sự "${u.name}"${password ? ' (đổi mật khẩu)' : ''}`);
   res.json(publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(u.id)));
 });
@@ -888,6 +922,7 @@ app.get('/api/report/growth', auth, (req, res) => {
            (SELECT s.followers   FROM tiktok_snapshots s WHERE s.channel_id=t.id AND s.snap_date <= ${cutoff} ORDER BY s.snap_date DESC LIMIT 1) AS base_f,
            (SELECT s.video_count FROM tiktok_snapshots s WHERE s.channel_id=t.id AND s.snap_date <= ${cutoff} ORDER BY s.snap_date DESC LIMIT 1) AS base_v,
            (SELECT s.followers   FROM tiktok_snapshots s WHERE s.channel_id=t.id ORDER BY s.snap_date ASC LIMIT 1) AS first_f,
+           (SELECT s.video_count FROM tiktok_snapshots s WHERE s.channel_id=t.id ORDER BY s.snap_date ASC LIMIT 1) AS first_v,
            (SELECT COUNT(*)      FROM tiktok_snapshots s WHERE s.channel_id=t.id) AS snap_count
     FROM tiktok_channels t LEFT JOIN users u ON u.id=t.assigned_to
     WHERE t.deleted_at IS NULL${scope}`).all();
@@ -898,7 +933,11 @@ app.get('/api/report/growth', auth, (req, res) => {
     else if (c.snap_count >= 2) base = c.first_f;
     const growth = base != null ? c.followers - base : null;
     const pct = (base && base > 0 && growth != null) ? +((growth / base) * 100).toFixed(1) : null;
-    const videoGrowth = c.base_v != null ? c.video_count - c.base_v : null;
+    // Video dùng cùng cơ chế mốc nền với follow (cách N ngày, hoặc mốc đầu tiên nếu chưa đủ ngày)
+    let baseV = null;
+    if (c.base_v != null) baseV = c.base_v;
+    else if (c.snap_count >= 2) baseV = c.first_v;
+    const videoGrowth = baseV != null ? c.video_count - baseV : null;
     const perDay = growth != null ? Math.round(growth / days) : null;
     return { id: c.id, name: c.name, tiktok_id: c.tiktok_id, country: c.country, url: c.url, status: c.status,
       owner: c.owner, owner_id: c.owner_id, followers: c.followers, growth, pct, videoGrowth, perDay };
@@ -1169,6 +1208,22 @@ app.get('/api/stats', auth, (req, res) => {
   });
   const tiktokByUser = Object.values(map).sort((a, b) => b.followers - a.followers);
 
+  // Kênh TikTok gom theo QUỐC GIA + ai đang giữ (Tổng quan: Hàn ? kênh, của ai… bấm vào lọc luôn)
+  const cmap = {};
+  chans.forEach((c) => {
+    const cc = c.country || '';
+    if (!cmap[cc]) cmap[cc] = { country: cc, count: 0, active: 0, building: 0, paused: 0, banned: 0, owners: {} };
+    const m = cmap[cc];
+    m.count++;
+    if (m[c.status] != null) m[c.status]++;
+    const on = c.owner || '(chưa giao)';
+    if (!m.owners[on]) m.owners[on] = { name: on, ownerId: c.owner_id || null, count: 0 };
+    m.owners[on].count++;
+  });
+  const tiktokByCountry = Object.values(cmap)
+    .map((m) => ({ ...m, owners: Object.values(m.owners).sort((a, b) => b.count - a.count) }))
+    .sort((a, b) => b.count - a.count);
+
   // Tài chính (chỉ admin)
   let finance = null;
   if (isAdmin) {
@@ -1179,7 +1234,7 @@ app.get('/api/stats', auth, (req, res) => {
     finance = { revenueMonth: rev, costMonth: cost, profitMonth: rev - cost, profitAll: revAll - costAll };
   }
 
-  res.json({ isAdmin, totalKeys, keyStatus, keysUnassigned, keysAssigned, myKeys, tiktok, tiktokByUser, finance });
+  res.json({ isAdmin, totalKeys, keyStatus, keysUnassigned, keysAssigned, myKeys, tiktok, tiktokByUser, tiktokByCountry, finance });
 });
 
 // SPA fallback

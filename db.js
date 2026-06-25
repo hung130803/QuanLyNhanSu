@@ -215,6 +215,15 @@ try {
   if (!drCols.includes('note')) db.exec('ALTER TABLE daily_reports ADD COLUMN note TEXT');
 } catch (_) {}
 
+// Bảo mật phiên đăng nhập: thêm cột last_seen để tự đăng xuất khi lâu không dùng
+try {
+  const sessCols = db.prepare('PRAGMA table_info(sessions)').all().map((c) => c.name);
+  if (!sessCols.includes('last_seen')) db.exec('ALTER TABLE sessions ADD COLUMN last_seen TEXT');
+  db.prepare('UPDATE sessions SET last_seen = COALESCE(last_seen, created_at)').run();
+  // Dọn phiên hết hạn: quá 30 ngày kể từ đăng nhập, hoặc 7 ngày không hoạt động
+  db.prepare("DELETE FROM sessions WHERE created_at < datetime('now','-30 days') OR COALESCE(last_seen, created_at) < datetime('now','-7 days')").run();
+} catch (_) {}
+
 // Tự dọn thùng rác: xóa hẳn những thứ đã ở thùng rác quá 30 ngày
 try {
   db.prepare("DELETE FROM keys WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now','-30 days')").run();

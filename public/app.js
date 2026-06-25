@@ -312,7 +312,24 @@ function drawDashboard() {
     ${unassigned.length > UA_CAP ? `<div class="hint">Hiển thị ${UA_CAP} key đầu. <a class="btn-link" data-go="keys-unassigned">Xem tất cả ${unassigned.length} key chưa làm →</a></div>` : ''}`
     : '<div class="empty" style="padding:30px 10px">Mọi key đều đã có người làm 👍</div>';
 
-  // Tóm tắt mỗi nhân viên: số kênh + tổng số liệu + 3 kênh nổi bật + nút mở danh sách đầy đủ
+  // Kênh TikTok theo QUỐC GIA — bấm vào là nhảy sang danh sách đã lọc sẵn nước đó
+  const ccName = (cc) => cc ? (countryName(cc) || cc) : 'Chưa đặt nước';
+  const byCountry = s.tiktokByCountry || [];
+  const byCountryHtml = byCountry.length ? `<div class="cc-grid">${byCountry.map((c) => {
+    const cc = c.country || '';
+    const sub = [c.active ? `🟢 ${c.active} chạy` : '', c.building ? `🌱 ${c.building} nuôi` : '', c.banned ? `⛔ ${c.banned} band` : ''].filter(Boolean).join(' · ');
+    const owners = (c.owners || []).map((o) => `<span class="cc-owner" data-ccp="${esc(cc || '__none')}|${o.ownerId ?? ''}" title="Xem kênh ${esc(ccName(cc))} của ${esc(o.name)}">👤 ${esc(o.name)}: <b>${o.count}</b></span>`).join('');
+    return `<div class="cc-card" data-cc="${esc(cc || '__none')}" title="Bấm xem tất cả kênh ${esc(ccName(cc))}">
+      <div class="cc-top">
+        <span class="cc-flag">${flag(cc)}</span>
+        <span class="cc-info"><span class="cc-name">${esc(ccName(cc))}</span><span class="cc-sub">${sub || '&nbsp;'}</span></span>
+        <span class="cc-count">${fmtNum(c.count)}</span>
+      </div>
+      ${owners ? `<div class="cc-owners">${owners}</div>` : ''}
+    </div>`;
+  }).join('')}</div>` : '<div class="empty">Chưa có kênh TikTok nào.</div>';
+
+  // Tóm tắt mỗi nhân viên: số kênh + 3 kênh nổi bật + nút mở danh sách đầy đủ
   const byUser = s.tiktokByUser || [];
   const byUserHtml = byUser.length ? `<div class="user-grid">${byUser.map((u) => `
     <div class="user-card">
@@ -320,7 +337,6 @@ function drawDashboard() {
         <span class="uc-name">👤 ${esc(u.owner)}</span>
         <span class="uc-count">${u.channelCount} kênh</span>
       </div>
-      <div class="uc-stats">👥 ${fmtCompact(u.followers)} &nbsp;•&nbsp; ❤️ ${fmtCompact(u.likes)} &nbsp;•&nbsp; 🎬 ${fmtCompact(u.videos)}</div>
       <div class="uc-top">
         ${(u.top || []).map((c) => `<div class="uc-item" data-ttgo="${c.id}" title="Xem chi tiết">
           <span class="uc-cn">${esc(c.name)} ${flag(c.country)}</span>
@@ -341,6 +357,10 @@ function drawDashboard() {
         <div class="panel-title">⚪ Key chưa ai làm ${unassigned.length ? `<span class="count">${unassigned.length}</span>` : ''}</div>
         ${unassignedHtml}
       </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">🌍 Kênh TikTok theo quốc gia <span class="muted" style="font-weight:400;font-size:13px">· bấm vào một nước để xem danh sách kênh nước đó</span></div>
+      ${byCountryHtml}
     </div>
     ${s.isAdmin ? `<div class="panel">
       <div class="panel-title">📱 Kênh TikTok theo nhân viên</div>
@@ -369,6 +389,16 @@ function drawDashboard() {
   // Mở trang Kênh TikTok đã lọc sẵn theo nhân viên
   view.querySelectorAll('[data-ttuser]').forEach((b) => b.onclick = () => {
     ttPerson = b.dataset.ttuser || ''; ttSearch = ''; ttCountry = 'all'; navigate('tiktok');
+  });
+  // Bấm thẻ quốc gia -> mở trang Kênh TikTok lọc sẵn theo nước đó
+  view.querySelectorAll('[data-cc]').forEach((b) => b.onclick = () => {
+    ttCountry = b.dataset.cc || 'all'; ttPerson = ''; ttSearch = ''; navigate('tiktok');
+  });
+  // Bấm vào tên nhân viên trong thẻ quốc gia -> lọc theo cả nước + người đó
+  view.querySelectorAll('.cc-owner[data-ccp]').forEach((s) => s.onclick = (e) => {
+    e.stopPropagation();
+    const [cc, oid] = s.dataset.ccp.split('|');
+    ttCountry = cc || 'all'; ttPerson = oid || ''; ttSearch = ''; navigate('tiktok');
   });
   view.querySelectorAll('[data-claim]').forEach((b) => b.onclick = () => dashClaim(b.dataset.claim, false));
   view.querySelectorAll('[data-dashrelease]').forEach((b) => b.onclick = () => dashClaim(b.dataset.dashrelease, true));
@@ -1475,6 +1505,22 @@ function drawGrowth(data, expBtn) {
 
   const hasAnyData = chans.some((c) => c.growth != null);
 
+  // Tóm tắt nhanh cả nhóm trong kỳ — để thấy ngay "kỳ này lên bao nhiêu follow"
+  const withData = chans.filter((c) => c.growth != null);
+  const totalGrowth = withData.reduce((a, c) => a + (c.growth || 0), 0);
+  const totalVideo = chans.reduce((a, c) => a + (c.videoGrowth || 0), 0);
+  const growing = withData.filter((c) => c.growth > 0).length;
+  const stalled = withData.filter((c) => c.growth === 0).length;
+  const dropped = withData.filter((c) => c.growth < 0).length;
+  const best = withData.slice().sort((a, b) => (b.growth || 0) - (a.growth || 0))[0];
+  const periodLabel = days === 1 ? 'hôm nay' : `${days} ngày qua`;
+  const summaryHtml = hasAnyData ? `<div class="kpi-grid" style="margin-bottom:16px">
+    <div class="kpi primary"><div class="kpi-icon">📈</div><div class="kpi-label">Tổng follow tăng ${periodLabel}</div><div class="kpi-value">${totalGrowth >= 0 ? '+' : '−'}${fmtCompact(Math.abs(totalGrowth))}</div><div class="kpi-sub">${withData.length} kênh có dữ liệu</div></div>
+    <div class="kpi info"><div class="kpi-icon">🎬</div><div class="kpi-label">Video đăng thêm ${periodLabel}</div><div class="kpi-value">${totalVideo >= 0 ? '+' : '−'}${fmtNum(Math.abs(totalVideo))}</div></div>
+    <div class="kpi"><div class="kpi-icon">🚦</div><div class="kpi-label">Tình trạng kênh</div><div class="kpi-value" style="font-size:20px">🟢 ${growing} &nbsp; ⚪ ${stalled} &nbsp; 🔻 ${dropped}</div><div class="kpi-sub">tăng · đứng yên · giảm</div></div>
+    ${best && best.growth > 0 ? `<div class="kpi accent"><div class="kpi-icon">🏆</div><div class="kpi-label">Kênh tăng mạnh nhất</div><div class="kpi-value" style="font-size:17px;line-height:1.3">${esc(best.name)} ${flag(best.country)}</div><div class="kpi-sub">+${fmtCompact(best.growth)} follow</div></div>` : ''}
+  </div>` : '';
+
   // Gom theo nhân viên, mỗi nhóm sắp xếp kênh tăng nhiều nhất lên đầu
   const groups = {};
   chans.forEach((c) => { (groups[c.owner] = groups[c.owner] || { owner: c.owner, ownerId: c.owner_id, items: [] }).items.push(c); });
@@ -1511,6 +1557,7 @@ function drawGrowth(data, expBtn) {
 
   view.innerHTML = `
     <div class="filter-tabs">${tabs}</div>
+    ${summaryHtml}
     <div class="hint" style="margin-bottom:14px">📈 Sắp xếp kênh tăng follow nhiều nhất lên đầu. 🚀 = tăng nhanh nhất nhóm, ⚠️ = chưa tăng. Số liệu tự cập nhật mỗi 6 tiếng.</div>
     ${!chans.length ? '<div class="empty"><div class="empty-icon">📈</div>Chưa có kênh nào.</div>'
       : !hasAnyData ? '<div class="empty"><div class="empty-icon">⏳</div>Cần ít nhất 2 ngày dữ liệu để tính tốc độ phát triển.<br>Hệ thống tự cập nhật mỗi 6 tiếng — quay lại sau 1–2 ngày sẽ thấy đầy đủ.</div>' + groupsHtml
@@ -1743,7 +1790,7 @@ function staffForm(user = null) {
   const form = el(`<form>
     <div class="form-row"><label>Họ tên</label><input id="u-name" value="${esc(user?.name || '')}" required></div>
     <div class="form-row"><label>Tên đăng nhập</label><input id="u-username" value="${esc(user?.username || '')}" ${isEdit ? 'disabled' : ''} required></div>
-    <div class="form-row"><label>Mật khẩu ${isEdit ? '(để trống nếu không đổi)' : ''}</label><input type="text" id="u-password" placeholder="${isEdit ? '••••••' : 'mật khẩu'}"></div>
+    <div class="form-row"><label>Mật khẩu ${isEdit ? '(để trống nếu không đổi)' : ''}</label><input type="text" id="u-password" placeholder="${isEdit ? '••••••' : 'ít nhất 8 ký tự, có chữ và số'}"><div class="hint">Mật khẩu phải có ít nhất 8 ký tự, gồm cả chữ và số.</div></div>
     <div class="form-grid">
       <div class="form-row"><label>Vai trò</label><select id="u-role"><option value="staff" ${user?.role==='staff'?'selected':''}>Nhân sự</option><option value="admin" ${user?.role==='admin'?'selected':''}>Quản trị</option></select></div>
       ${isEdit ? `<div class="form-row"><label>Trạng thái</label><select id="u-active"><option value="1" ${user.active?'selected':''}>Hoạt động</option><option value="0" ${!user.active?'selected':''}>Khóa</option></select></div>` : ''}
@@ -1979,7 +2026,7 @@ function renderSettings() {
       <div class="panel-title">Đổi mật khẩu</div>
       <form id="pw-form">
         <div class="form-row"><label>Mật khẩu hiện tại</label><input type="password" id="pw-old" required></div>
-        <div class="form-row"><label>Mật khẩu mới</label><input type="password" id="pw-new" required></div>
+        <div class="form-row"><label>Mật khẩu mới</label><input type="password" id="pw-new" minlength="8" required><div class="hint">Ít nhất 8 ký tự, gồm cả chữ và số. Đổi xong sẽ tự đăng xuất các thiết bị khác.</div></div>
         <div class="form-actions"><button type="submit" class="btn btn-primary">Đổi mật khẩu</button></div>
       </form>
     </div>
