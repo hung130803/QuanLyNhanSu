@@ -1,5 +1,6 @@
 // server.js — API server cho hệ thống quản lý team reup video
 const path = require('path');
+const fs = require('fs');
 const crypto = require('crypto');
 const express = require('express');
 const bcrypt = require('bcryptjs');
@@ -7,6 +8,17 @@ const db = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Phiên bản tài nguyên: đổi mỗi lần khởi động/deploy -> ép trình duyệt lấy CSS/JS mới
+const ASSET_V = Date.now().toString(36);
+// Gửi index.html kèm số phiên bản (chống cache cũ vĩnh viễn, khỏi phải Ctrl+F5)
+function sendIndex(res) {
+  fs.readFile(path.join(__dirname, 'public', 'index.html'), 'utf8', (err, html) => {
+    if (err) return res.status(500).send('Lỗi tải trang');
+    res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    res.type('html').send(html.replace(/__V__/g, ASSET_V));
+  });
+}
 
 app.set('trust proxy', 1); // chạy sau proxy của Fly/Cloudflare (lấy đúng IP)
 
@@ -21,8 +33,11 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '256kb' }));
 // API không bao giờ được cache (để thêm/sửa là thấy ngay, không phải tải lại trang)
 app.use('/api', (req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
-// Chống cache file giao diện -> trình duyệt luôn lấy bản mới nhất sau khi cập nhật
+// Trang chủ: phục vụ index.html có gắn số phiên bản (không để static tự trả index)
+app.get('/', (req, res) => sendIndex(res));
+// File tĩnh khác (app.js, styles.css, ảnh...) — KHÔNG tự trả index.html
 app.use(express.static(path.join(__dirname, 'public'), {
+  index: false,
   setHeaders: (res, filePath) => {
     if (/\.(html|js|css)$/i.test(filePath)) res.setHeader('Cache-Control', 'no-cache, must-revalidate');
   },
@@ -1243,11 +1258,8 @@ app.get('/api/stats', auth, (req, res) => {
   res.json({ isAdmin, totalKeys, keyStatus, keysUnassigned, keysAssigned, myKeys, tiktok, tiktokByUser, tiktokByCountry, finance });
 });
 
-// SPA fallback
-app.get('*', (req, res) => {
-  res.setHeader('Cache-Control', 'no-cache, must-revalidate');
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+// SPA fallback — luôn trả index.html có gắn số phiên bản
+app.get('*', (req, res) => sendIndex(res));
 
 app.listen(PORT, () => {
   console.log(`\n🎬 ReupManager đang chạy tại: http://localhost:${PORT}`);
