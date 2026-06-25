@@ -1260,7 +1260,6 @@ function tiktokForm(ch = null) {
     REWARD_COUNTRIES.map(([c, n]) => `<option value="${c}" ${curCountry === c ? 'selected' : ''}>${flag(c)} ${n} (${c})</option>`).join('');
   if (curCountry && !REWARD_COUNTRIES.some(([c]) => c === curCountry))
     countryOpts += `<option value="${esc(curCountry)}" selected>${flag(curCountry)} ${esc(curCountry)} (ngoài Rewards)</option>`;
-  const keyDatalist = keysCache.map((k) => `<option value="${esc(k.channel_name)}"></option>`).join('');
   const statusOptions = Object.entries(TT_STATUS).map(([v, o]) => `<option value="${v}" ${ch && ch.status === v ? 'selected' : ''}>${o.label}</option>`).join('');
   const staffOptions = State.users.map((u) => `<option value="${u.id}" ${ch && ch.assigned_to == u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('');
   const form = el(`<form>
@@ -1276,11 +1275,16 @@ function tiktokForm(ch = null) {
       <div class="form-row"><label>Trạng thái</label><select id="tt-status">${statusOptions}</select></div>
     </div>
     <div class="form-row">
-      <label>Key YouTube nguồn (gõ vài chữ để tìm)</label>
-      <input id="tt-key-input" list="tt-key-list" placeholder="— gõ tên key để tìm —" value="${esc(ch?.source_key_name || '')}" autocomplete="off">
-      <datalist id="tt-key-list">${keyDatalist}</datalist>
+      <label>Key YouTube nguồn (kênh gốc để reup)</label>
+      <div class="keypick" id="tt-keypick">
+        <button type="button" class="keypick-btn" id="tt-key-btn"></button>
+        <div class="keypick-panel hidden" id="tt-key-panel">
+          <input class="search keypick-search" id="tt-key-search" placeholder="🔍 Tìm key theo tên / chủ đề…" autocomplete="off">
+          <div class="keypick-list" id="tt-key-list"></div>
+        </div>
+      </div>
       <input type="hidden" id="tt-key" value="${ch?.source_key_id || ''}">
-      <div class="hint">1 key YouTube gắn được cho nhiều kênh TikTok (reup nhiều kênh cùng nội dung).</div>
+      <div class="hint">Bấm để chọn kênh YouTube gốc — có ảnh để dễ nhận. 1 key gắn được cho nhiều kênh TikTok.</div>
     </div>
     ${isAdmin ? `<div class="form-row"><label>Giao cho nhân viên</label><select id="tt-assign"><option value="">— của tôi —</option>${staffOptions}</select></div>` : ''}
     <div class="form-row">
@@ -1298,12 +1302,49 @@ function tiktokForm(ch = null) {
     </div>
   </form>`);
 
-  // Gõ tên key -> map sang id
-  const keyInput = form.querySelector('#tt-key-input');
-  keyInput.oninput = () => {
-    const k = keysCache.find((x) => x.channel_name === keyInput.value);
-    form.querySelector('#tt-key').value = k ? k.id : '';
+  // Bộ chọn key YouTube nguồn CÓ ẢNH (dễ chọn đúng kênh)
+  const selWrap = form.querySelector('#tt-keypick');
+  const keyBtn = form.querySelector('#tt-key-btn');
+  const keyPanel = form.querySelector('#tt-key-panel');
+  const keySearch = form.querySelector('#tt-key-search');
+  const keyListEl = form.querySelector('#tt-key-list');
+  const hiddenKey = form.querySelector('#tt-key');
+  const kpThumb = (k) => (k && k.thumbnail)
+    ? `<img class="kp-thumb" src="${esc(k.thumbnail)}" onerror="this.style.visibility='hidden'">`
+    : '<span class="kp-thumb kp-thumb-empty">🔑</span>';
+  function renderKeyBtn() {
+    const k = keysCache.find((x) => String(x.id) === String(hiddenKey.value));
+    keyBtn.innerHTML = k
+      ? `${kpThumb(k)}<span class="kp-name">${esc(k.channel_name)}</span><span class="kp-caret">▾</span>`
+      : `<span class="kp-thumb kp-thumb-empty">🔑</span><span class="kp-name muted">— Chưa gắn key (bấm để chọn) —</span><span class="kp-caret">▾</span>`;
+  }
+  function renderKeyList(q) {
+    q = (q || '').toLowerCase().trim();
+    let list = keysCache;
+    if (q) list = list.filter((k) => (k.channel_name || '').toLowerCase().includes(q) || (k.category || '').toLowerCase().includes(q));
+    const cap = 60;
+    const items = list.slice(0, cap).map((k) => `
+      <div class="keypick-item" data-kid="${k.id}">
+        ${kpThumb(k)}
+        <div class="kp-info"><b>${esc(k.channel_name)}</b><span>${k.category ? esc(k.category) + ' · ' : ''}${k.country ? flag(k.country) + ' ' : ''}${k.subscribers ? '👥 ' + esc(k.subscribers) : ''}</span></div>
+        ${String(hiddenKey.value) === String(k.id) ? '<span class="kp-check">✓</span>' : ''}
+      </div>`).join('');
+    keyListEl.innerHTML =
+      `<div class="keypick-item kp-none" data-kid=""><span class="kp-thumb kp-thumb-empty">✕</span><div class="kp-info"><b>Không gắn key</b></div></div>`
+      + (items || '<div class="hint" style="padding:10px">Không tìm thấy key nào.</div>')
+      + (list.length > cap ? `<div class="hint" style="padding:8px 10px">Còn ${list.length - cap} key nữa — gõ để tìm.</div>` : '');
+  }
+  function onDocClick(e) { if (selWrap && !selWrap.contains(e.target)) closeKeyPanel(); }
+  function openKeyPanel() { keyPanel.classList.remove('hidden'); renderKeyList(keySearch.value); keySearch.focus(); setTimeout(() => document.addEventListener('click', onDocClick), 0); }
+  function closeKeyPanel() { keyPanel.classList.add('hidden'); document.removeEventListener('click', onDocClick); }
+  keyBtn.onclick = () => keyPanel.classList.contains('hidden') ? openKeyPanel() : closeKeyPanel();
+  keySearch.oninput = () => renderKeyList(keySearch.value);
+  keyListEl.onclick = (e) => {
+    const it = e.target.closest('.keypick-item'); if (!it) return;
+    hiddenKey.value = it.dataset.kid || '';
+    renderKeyBtn(); closeKeyPanel();
   };
+  renderKeyBtn();
 
   let pdata = {};
   if (!isEdit) {
@@ -1481,6 +1522,7 @@ function bulkTiktokForm() {
 // ============ TĂNG TRƯỞNG TỪNG KÊNH ============
 let growthDays = 7;
 let growthLast = null;
+let growthGroupBy = 'owner'; // 'owner' = theo nhân viên | 'country' = theo quốc gia
 
 async function renderGrowth() {
   $('#topbar-right').innerHTML = '';
@@ -1527,9 +1569,22 @@ function drawGrowth(data, expBtn) {
     ${best && best.growth > 0 ? `<div class="kpi accent"><div class="kpi-icon">🏆</div><div class="kpi-label">Kênh tăng mạnh nhất</div><div class="kpi-value" style="font-size:17px;line-height:1.3">${esc(best.name)} ${flag(best.country)}</div><div class="kpi-sub">+${fmtCompact(best.growth)} follow</div></div>` : ''}
   </div>` : '';
 
-  // Gom theo nhân viên, mỗi nhóm sắp xếp kênh tăng nhiều nhất lên đầu
+  // Nút chọn cách nhóm: theo nhân viên hay theo quốc gia
+  const byCountry = growthGroupBy === 'country';
+  const groupModeTabs = `<div class="filter-tabs" style="margin-bottom:14px">
+    <div class="filter-tab ${!byCountry ? 'active' : ''}" data-groupby="owner">👤 Theo nhân viên</div>
+    <div class="filter-tab ${byCountry ? 'active' : ''}" data-groupby="country">🌍 Theo quốc gia</div>
+  </div>`;
+
+  // Gom theo nhân viên HOẶC theo quốc gia, mỗi nhóm sắp xếp kênh tăng nhiều nhất lên đầu
   const groups = {};
-  chans.forEach((c) => { (groups[c.owner] = groups[c.owner] || { owner: c.owner, ownerId: c.owner_id, items: [] }).items.push(c); });
+  chans.forEach((c) => {
+    const k = byCountry ? (c.country || '__none') : c.owner;
+    if (!groups[k]) groups[k] = byCountry
+      ? { key: k, label: c.country ? (countryName(c.country) || c.country) : 'Chưa đặt nước', cc: c.country || '', items: [] }
+      : { key: k, label: c.owner, ownerId: c.owner_id, items: [] };
+    groups[k].items.push(c);
+  });
   const groupList = Object.values(groups).map((g) => {
     g.items.sort((a, b) => (b.growth ?? -Infinity) - (a.growth ?? -Infinity));
     g.total = g.items.reduce((a, c) => a + (c.growth || 0), 0);
@@ -1554,27 +1609,37 @@ function drawGrowth(data, expBtn) {
   };
 
   const thead = `<thead><tr><th>#</th><th>Kênh</th><th>Follow</th><th>Tăng ${days === 1 ? 'hôm nay' : days + ' ngày'}</th><th>Tốc độ</th><th>Video mới</th></tr></thead>`;
-  const groupsHtml = groupList.map((g) => `
-    <div class="panel">
-      <div class="panel-title">👤 ${esc(g.owner)} <span class="muted" style="font-weight:400;font-size:13px">· ${g.items.length} kênh · tổng ${g.total >= 0 ? '+' : '−'}${fmtCompact(Math.abs(g.total))} follow</span>
-        ${g.ownerId != null ? `<a class="btn-link" data-ttuser="${g.ownerId}" style="float:right;font-weight:400">mở danh sách →</a>` : ''}</div>
+  const groupsHtml = groupList.map((g) => {
+    const head = byCountry
+      ? `<span class="country-flag" style="font-size:20px">${flag(g.cc)}</span> ${esc(g.label)}`
+      : `👤 ${esc(g.label)}`;
+    const openLink = byCountry
+      ? `<a class="btn-link" data-ttcc="${esc(g.cc || '__none')}" style="float:right;font-weight:400">mở danh sách →</a>`
+      : (g.ownerId != null ? `<a class="btn-link" data-ttuser="${g.ownerId}" style="float:right;font-weight:400">mở danh sách →</a>` : '');
+    return `<div class="panel">
+      <div class="panel-title">${head} <span class="muted" style="font-weight:400;font-size:13px">· ${g.items.length} kênh · tổng ${g.total >= 0 ? '+' : '−'}${fmtCompact(Math.abs(g.total))} follow</span>
+        ${openLink}</div>
       <div class="table-wrap cards"><table>${thead}<tbody>${g.items.map(rowHtml).join('')}</tbody></table></div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   view.innerHTML = `
     <div class="filter-tabs">${tabs}</div>
     ${summaryHtml}
+    ${groupModeTabs}
     <div class="hint" style="margin-bottom:14px">📈 Sắp xếp kênh tăng follow nhiều nhất lên đầu. 🚀 = tăng nhanh nhất nhóm, ⚠️ = chưa tăng. Số liệu tự cập nhật mỗi 6 tiếng.</div>
     ${!chans.length ? '<div class="empty"><div class="empty-icon">📈</div>Chưa có kênh nào.</div>'
       : !hasAnyData ? '<div class="empty"><div class="empty-icon">⏳</div>Cần ít nhất 2 ngày dữ liệu để tính tốc độ phát triển.<br>Hệ thống tự cập nhật mỗi 6 tiếng — quay lại sau 1–2 ngày sẽ thấy đầy đủ.</div>' + groupsHtml
       : groupsHtml}`;
 
   view.querySelectorAll('[data-days]').forEach((t) => t.onclick = () => { growthDays = +t.dataset.days; growthLast = null; renderGrowth(); });
+  view.querySelectorAll('[data-groupby]').forEach((t) => t.onclick = () => { growthGroupBy = t.dataset.groupby; drawGrowth(growthLast || data, expBtn); });
   view.querySelectorAll('[data-ttgo3]').forEach((r) => r.onclick = async (e) => {
     if (e.target.closest('a')) return;
     try { if (!tiktokCache.length) tiktokCache = await api('/tiktok'); const t = tiktokCache.find((x) => x.id == r.dataset.ttgo3); if (t) tiktokDetail(t); } catch (_) {}
   });
   view.querySelectorAll('[data-ttuser]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); ttPerson = b.dataset.ttuser || ''; ttSearch = ''; ttCountry = 'all'; navigate('tiktok'); });
+  view.querySelectorAll('[data-ttcc]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); ttCountry = b.dataset.ttcc || 'all'; ttPerson = ''; ttSearch = ''; navigate('tiktok'); });
 }
 
 // ============ BÁO CÁO CÔNG VIỆC (ngày / tuần / tháng) ============

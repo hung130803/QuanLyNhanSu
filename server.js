@@ -918,13 +918,16 @@ app.get('/api/report/growth', auth, (req, res) => {
   const cutoff = `date('now','+7 hours','-${days} days')`;
   const rows = db.prepare(`
     SELECT t.id, t.name, t.tiktok_id, t.country, t.followers, t.video_count, t.status, t.url,
-           t.assigned_to AS owner_id, COALESCE(u.name,'(chưa giao)') AS owner,
+           COALESCE(t.assigned_to, t.added_by) AS owner_id,
+           COALESCE(ua.name, ub.name, '(chưa rõ)') AS owner,
            (SELECT s.followers   FROM tiktok_snapshots s WHERE s.channel_id=t.id AND s.snap_date <= ${cutoff} ORDER BY s.snap_date DESC LIMIT 1) AS base_f,
            (SELECT s.video_count FROM tiktok_snapshots s WHERE s.channel_id=t.id AND s.snap_date <= ${cutoff} ORDER BY s.snap_date DESC LIMIT 1) AS base_v,
            (SELECT s.followers   FROM tiktok_snapshots s WHERE s.channel_id=t.id ORDER BY s.snap_date ASC LIMIT 1) AS first_f,
            (SELECT s.video_count FROM tiktok_snapshots s WHERE s.channel_id=t.id ORDER BY s.snap_date ASC LIMIT 1) AS first_v,
            (SELECT COUNT(*)      FROM tiktok_snapshots s WHERE s.channel_id=t.id) AS snap_count
-    FROM tiktok_channels t LEFT JOIN users u ON u.id=t.assigned_to
+    FROM tiktok_channels t
+    LEFT JOIN users ua ON ua.id = t.assigned_to
+    LEFT JOIN users ub ON ub.id = t.added_by
     WHERE t.deleted_at IS NULL${scope}`).all();
   const channels = rows.map((c) => {
     // Mốc nền: ưu tiên mốc cách đây N ngày; chưa đủ N ngày thì lấy mốc đầu tiên (nếu có ≥2 mốc)
@@ -1193,9 +1196,12 @@ app.get('/api/stats', auth, (req, res) => {
 
   // Kênh TikTok gom theo từng nhân viên — chỉ TÓM TẮT + 3 kênh nổi bật (để Tổng quan luôn gọn dù có 1000 kênh)
   const chans = db.prepare(`
-    SELECT t.id, t.name, t.followers, t.likes, t.video_count, t.country, t.status, t.assigned_to AS owner_id,
-           COALESCE(u.name,'(chưa giao)') AS owner
-    FROM tiktok_channels t LEFT JOIN users u ON u.id = t.assigned_to
+    SELECT t.id, t.name, t.followers, t.likes, t.video_count, t.country, t.status,
+           COALESCE(t.assigned_to, t.added_by) AS owner_id,
+           COALESCE(ua.name, ub.name, '(chưa rõ)') AS owner
+    FROM tiktok_channels t
+    LEFT JOIN users ua ON ua.id = t.assigned_to
+    LEFT JOIN users ub ON ub.id = t.added_by
     WHERE t.deleted_at IS NULL ${isAdmin ? '' : `AND (t.assigned_to = ${me} OR t.added_by = ${me})`}
     ORDER BY t.followers DESC`).all();
   const map = {};
