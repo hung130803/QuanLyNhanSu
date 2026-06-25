@@ -233,6 +233,7 @@ function renderPage(page) {
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.page === page));
   $('#topbar-right').innerHTML = '';
   closeMenu();
+  $('#view').classList.remove('no-anim'); // mở/đổi trang -> cho phép hiệu ứng xuất hiện
   const renderers = { dashboard: renderDashboard, board: renderBoard, keys: renderKeys, tiktok: renderTiktok, growth: renderGrowth, videos: renderVideos, staff: renderStaff, finance: renderFinance, activity: renderActivity, trash: renderTrash, settings: renderSettings };
   (renderers[page] || renderDashboard)();
 }
@@ -247,12 +248,16 @@ let dashStats = null; // cache số liệu TikTok + tài chính (số liệu key
 async function renderDashboard() {
   const view = $('#view');
   // Có cache thì VẼ NGAY (không chớp "đang tải"), rồi mới làm mới ở nền
-  if (dashStats && keysCache.length) drawDashboard();
+  const hadCache = dashStats && keysCache.length;
+  if (hadCache) drawDashboard();
   else view.innerHTML = '<div class="loading">Đang tải dữ liệu…</div>';
   try {
     const [s, keys] = await Promise.all([api('/stats'), api('/keys')]);
     dashStats = s; keysCache = keys;
-    if (State.page === 'dashboard') drawDashboard();
+    if (State.page === 'dashboard') {
+      if (hadCache) view.classList.add('no-anim'); // đã vẽ từ cache rồi -> làm mới ngầm, không chạy lại hiệu ứng
+      drawDashboard();
+    }
   } catch (e) {
     if (!dashStats) view.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
   }
@@ -424,6 +429,7 @@ function mutateClaim(k, release) {
 function dashClaim(id, release) {
   const k = keysCache.find((x) => x.id == id); if (!k) return;
   mutateClaim(k, release);
+  $('#view').classList.add('no-anim'); // cập nhật tại chỗ -> không chạy lại hiệu ứng xuất hiện
   drawDashboard(); // vẽ lại ngay, không chờ server
   api('/keys/' + id + '/claim', { method: 'POST', body: release ? { release: true } : {} })
     .then((u) => { const i = keysCache.findIndex((x) => x.id == id); if (i >= 0 && u && u.id) keysCache[i] = u; })

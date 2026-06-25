@@ -666,3 +666,101 @@ body.light .cell-link { color: #2f6fd0 !important; }
   .cat-tag, .country-tag, .quality-tag, .ch-sub-tag { font-size: 10.5px; }
   .cell-thumb { width: 32px; height: 32px; }
 }
+
+/* ============================================================
+   NÂNG CẤP GIAO DIỆN CAO CẤP (premium pass) — glass, glow, motion
+   ============================================================ */
+:root {
+  --ease-soft: cubic-bezier(.22,.7,.25,1);
+  --inset-hi: inset 0 1px 0 rgba(255,255,255,.07);
+  --glow-primary: 0 22px 55px -22px rgba(124,108,240,.65);
+  --glow-accent: 0 22px 55px -22px rgba(25,211,162,.55);
+}
+
+/* Nền: thêm các vầng sáng màu (ethereal glass) cho có chiều sâu */
+body {
+  background:
+    radial-gradient(760px 520px at 86% -8%, rgba(124,108,240,.18), transparent 60%),
+    radial-gradient(680px 460px at 4% 4%, rgba(70,166,255,.10), transparent 55%),
+    radial-gradient(820px 560px at -10% 114%, rgba(25,211,162,.09), transparent 55%),
+    var(--bg);
+  background-attachment: fixed;
+}
+
+/* THẺ KPI: mặt kính, viền sáng trên, số to, vạch màu phát sáng */
+.kpi {
+  border-radius: 18px;
+  background: linear-gradient(165deg, rgba(255,255,255,.05), rgba(255,255,255,0) 46%), var(--card);
+  box-shadow: var(--inset-hi), var(--shadow-sm);
+}
+.kpi::before { width: 4px; border-radius: 0 4px 4px 0; opacity: .95; box-shadow: 0 0 16px 0 currentColor; }
+.kpi.primary::before { color: var(--primary); }
+.kpi.accent::before { color: var(--accent); }
+.kpi.info::before { color: var(--info); }
+.kpi.warn::before { color: var(--warn); }
+.kpi.danger::before { color: var(--danger); }
+.kpi-value { font-size: 34px; }
+.kpi-label { letter-spacing: .01em; text-transform: none; }
+.kpi-icon { font-size: 30px; opacity: .9; filter: drop-shadow(0 6px 12px rgba(0,0,0,.45)); }
+/* Thẻ nổi bật có nền màu nhẹ để hút mắt */
+.kpi.primary { background: linear-gradient(165deg, rgba(124,108,240,.22), rgba(124,108,240,.04) 60%), var(--card); border-color: rgba(124,108,240,.28); }
+.kpi.accent  { background: linear-gradient(165deg, rgba(25,211,162,.20), rgba(25,211,162,.04) 60%), var(--card); border-color: rgba(25,211,162,.26); }
+.kpi.info    { background: linear-gradient(165deg, rgba(70,166,255,.18), rgba(70,166,255,.04) 60%), var(--card); border-color: rgba(70,166,255,.24); }
+.kpi.clickable { transition: transform .3s var(--ease-soft), border-color .3s var(--ease-soft), box-shadow .3s var(--ease-soft); }
+.kpi.clickable:hover { transform: translateY(-5px); box-shadow: var(--inset-hi), var(--glow-primary); border-color: rgba(124,108,240,.6); }
+.kpi.accent.clickable:hover { box-shadow: var(--inset-hi), var(--glow-accent); border-color: rgba(25,211,162,.6); }
+
+/* PANEL: mặt kính + viền sáng + bo lớn hơn */
+.panel {
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,0) 32%), var(--card);
+  box-shadow: var(--inset-hi), var(--shadow-sm);
+  padding: 22px 22px 24px;
+}
+.panel-title { font-size: 17px; letter-spacing: -.01em; }
+
+/* THẺ QUỐC GIA: viền sáng + glow khi rê chuột, số đếm to */
+.cc-card { border-radius: 18px; background: linear-gradient(165deg, rgba(255,255,255,.04), transparent 48%), var(--card); box-shadow: var(--inset-hi); transition: transform .3s var(--ease-soft), border-color .3s var(--ease-soft), box-shadow .3s var(--ease-soft); }
+.cc-card:hover { transform: translateY(-5px); border-color: rgba(124,108,240,.55); box-shadow: var(--inset-hi), var(--glow-primary); }
+.cc-count { font-size: 28px; }
+.cc-flag { font-size: 34px; }
+
+/* THẺ NHÂN VIÊN: viền sáng nhẹ */
+.user-card { border-radius: 16px; box-shadow: var(--inset-hi); }
+
+/* Nút chính: bo tròn mềm + hiệu ứng nhấn lún */
+.btn { transition: transform .12s var(--ease-soft), background .2s, box-shadow .2s, opacity .15s; }
+.btn-primary:active { transform: scale(.97); }
+
+/* HIỆU ỨNG XUẤT HIỆN: trượt lên + mờ dần, lần lượt (chỉ khi mở/đổi trang) */
+@keyframes rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+.view > .kpi-grid > .kpi,
+.view > .panel,
+.view > .grid-2 > .panel { animation: rise .55s var(--ease-soft) both; }
+.view > .kpi-grid > .kpi:nth-child(2) { animation-delay: .06s; }
+.view > .kpi-grid > .kpi:nth-child(3) { animation-delay: .12s; }
+.view > .kpi-grid > .kpi:nth-child(4) { animation-delay: .18s; }
+.view > .kpi-grid > .kpi:nth-child(5) { animation-delay: .24s; }
+.view > .grid-2 > .panel:nth-child(2) { animation-delay: .1s; }
+.view > .panel:nth-child(n+2) { animation-delay: .14s; }
+/* Tắt hiệu ứng khi cập nhật tại chỗ (nhận/bỏ key) để không bị nhấp nháy */
+.view.no-anim > .kpi-grid > .kpi,
+.view.no-anim > .panel,
+.view.no-anim > .grid-2 > .panel { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .view > .kpi-grid > .kpi, .view > .panel, .view > .grid-2 > .panel { animation: none; }
+}
+
+/* Chế độ Sáng: chỉnh vầng sáng & nền thẻ cho hợp tông sáng */
+body.light {
+  background:
+    radial-gradient(760px 520px at 86% -8%, rgba(124,108,240,.12), transparent 60%),
+    radial-gradient(820px 560px at -10% 114%, rgba(25,211,162,.10), transparent 55%),
+    var(--bg);
+  background-attachment: fixed;
+}
+body.light .kpi, body.light .panel { box-shadow: var(--shadow-sm); }
+body.light .kpi.primary { background: linear-gradient(165deg, rgba(124,108,240,.14), #fff 60%); }
+body.light .kpi.accent { background: linear-gradient(165deg, rgba(25,211,162,.14), #fff 60%); }
+body.light .kpi.info { background: linear-gradient(165deg, rgba(70,166,255,.13), #fff 60%); }
+body.light .cc-card, body.light .user-card { box-shadow: var(--shadow-sm); }
