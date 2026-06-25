@@ -706,12 +706,12 @@ function drawKeys() {
     const st = STATUS[k.status] || STATUS.todo;
     const thumb = k.thumbnail ? `<img class="cell-thumb" src="${esc(k.thumbnail)}" onerror="this.style.visibility='hidden'">` : `<div class="cell-thumb"></div>`;
     const subInfo = [];
-    if (k.country) subInfo.push(`<span class="country-tag" style="${chipStyle(k.country)}">${flag(k.country)} ${esc(countryName(k.country) || k.country)}</span>`);
+    if (k.country) subInfo.push(`<span class="country-tag">${flag(k.country)} ${esc(countryName(k.country) || k.country)}</span>`);
     if (k.quality) subInfo.push(`<span class="quality-tag ${QUALITY_CLS[k.quality] || ''}">${esc(QUALITY[k.quality] || k.quality)}</span>`);
     if (k.subscribers) subInfo.push(`<span class="ch-sub-tag">👥 ${esc(k.subscribers)}</span>`);
-    return `<tr class="${k.quality === 'ngon' ? 'row-ngon' : ''}">
+    return `<tr class="${k.quality === 'ngon' ? 'row-ngon' : k.quality === 'tot' ? 'row-tot' : ''}">
       <td class="chk-col"><input type="checkbox" class="k-row-chk" value="${k.id}" ${keysSelected.has(k.id) ? 'checked' : ''}></td>
-      <td data-label="Chủ đề" class="cat-cell">${k.category ? `<span class="cat-tag" style="${chipStyle(k.category)}">${esc(k.category)}</span>` : '<span class="muted">—</span>'}</td>
+      <td data-label="Chủ đề" class="cat-cell">${k.category ? `<span class="cat-tag">${esc(k.category)}</span>` : '<span class="muted">—</span>'}</td>
       <td class="cell-main"><div class="cell-channel">${thumb}<div>
         <a href="${esc(k.url)}" target="_blank" rel="noopener" title="Bấm mở kênh">${esc(k.channel_name)}</a>
         <div class="cell-sub">${subInfo.join(' ')}</div>
@@ -1551,22 +1551,8 @@ function drawGrowth(data, expBtn) {
   const tabs = periods.map(([d, l]) => `<div class="filter-tab ${growthDays === d ? 'active' : ''}" data-days="${d}">${l}</div>`).join('');
 
   const hasAnyData = chans.some((c) => c.growth != null);
-
-  // Tóm tắt nhanh cả nhóm trong kỳ — để thấy ngay "kỳ này lên bao nhiêu follow"
-  const withData = chans.filter((c) => c.growth != null);
-  const totalGrowth = withData.reduce((a, c) => a + (c.growth || 0), 0);
-  const totalVideo = chans.reduce((a, c) => a + (c.videoGrowth || 0), 0);
-  const growing = withData.filter((c) => c.growth > 0).length;
-  const stalled = withData.filter((c) => c.growth === 0).length;
-  const dropped = withData.filter((c) => c.growth < 0).length;
-  const best = withData.slice().sort((a, b) => (b.growth || 0) - (a.growth || 0))[0];
   const periodLabel = days === 1 ? 'hôm nay' : `${days} ngày qua`;
-  const summaryHtml = hasAnyData ? `<div class="kpi-grid" style="margin-bottom:16px">
-    <div class="kpi primary"><div class="kpi-icon">📈</div><div class="kpi-label">Tổng follow tăng ${periodLabel}</div><div class="kpi-value">${totalGrowth >= 0 ? '+' : '−'}${fmtCompact(Math.abs(totalGrowth))}</div><div class="kpi-sub">${withData.length} kênh có dữ liệu</div></div>
-    <div class="kpi info"><div class="kpi-icon">🎬</div><div class="kpi-label">Video đăng thêm ${periodLabel}</div><div class="kpi-value">${totalVideo >= 0 ? '+' : '−'}${fmtNum(Math.abs(totalVideo))}</div></div>
-    <div class="kpi"><div class="kpi-icon">🚦</div><div class="kpi-label">Tình trạng kênh</div><div class="kpi-value" style="font-size:20px">🟢 ${growing} &nbsp; ⚪ ${stalled} &nbsp; 🔻 ${dropped}</div><div class="kpi-sub">tăng · đứng yên · giảm</div></div>
-    ${best && best.growth > 0 ? `<div class="kpi accent"><div class="kpi-icon">🏆</div><div class="kpi-label">Kênh tăng mạnh nhất</div><div class="kpi-value" style="font-size:17px;line-height:1.3">${esc(best.name)} ${flag(best.country)}</div><div class="kpi-sub">+${fmtCompact(best.growth)} follow</div></div>` : ''}
-  </div>` : '';
+  // (Tóm tắt được tính BÊN DƯỚI theo nhân viên đang chọn — không phải tổng tất cả)
 
   // "Nhóm theo" = chọn NHÂN VIÊN (Đức, Hùng... + Quản trị viên). Bấm 1 người -> kênh của họ tách theo quốc gia.
   const ownersMap = {};
@@ -1588,6 +1574,22 @@ function drawGrowth(data, expBtn) {
 
   // Lọc theo nhân viên đang chọn
   const scoped = growthOwnerFilter === 'all' ? chans : chans.filter((c) => String(c.owner_id ?? '') === String(growthOwnerFilter));
+
+  // Tóm tắt tính theo PHẠM VI đang chọn (Tất cả hoặc 1 nhân viên) — bấm ai thì số nhảy theo người đó
+  const scopeName = growthOwnerFilter === 'all' ? 'tất cả nhân viên' : ('của ' + (ownersTabsList.find((o) => o.id === String(growthOwnerFilter))?.name || ''));
+  const sWith = scoped.filter((c) => c.growth != null);
+  const sTotalGrowth = sWith.reduce((a, c) => a + (c.growth || 0), 0);
+  const sTotalVideo = scoped.reduce((a, c) => a + (c.videoGrowth || 0), 0);
+  const sGrowing = sWith.filter((c) => c.growth > 0).length;
+  const sStalled = sWith.filter((c) => c.growth === 0).length;
+  const sDropped = sWith.filter((c) => c.growth < 0).length;
+  const sBest = sWith.slice().sort((a, b) => (b.growth || 0) - (a.growth || 0))[0];
+  const summaryHtml = sWith.length ? `<div class="kpi-grid" style="margin-bottom:16px">
+    <div class="kpi primary"><div class="kpi-icon">📈</div><div class="kpi-label">Tổng follow tăng ${periodLabel}</div><div class="kpi-value">${sTotalGrowth >= 0 ? '+' : '−'}${fmtCompact(Math.abs(sTotalGrowth))}</div><div class="kpi-sub">${sWith.length} kênh có dữ liệu · ${esc(scopeName)}</div></div>
+    <div class="kpi info"><div class="kpi-icon">🎬</div><div class="kpi-label">Video đăng thêm ${periodLabel}</div><div class="kpi-value">${sTotalVideo >= 0 ? '+' : '−'}${fmtNum(Math.abs(sTotalVideo))}</div></div>
+    <div class="kpi"><div class="kpi-icon">🚦</div><div class="kpi-label">Tình trạng kênh</div><div class="status-line"><b class="text-accent">${sGrowing}</b> tăng &nbsp;·&nbsp; <b>${sStalled}</b> đứng yên &nbsp;·&nbsp; <b class="text-danger">${sDropped}</b> giảm</div></div>
+    ${sBest && sBest.growth > 0 ? `<div class="kpi accent"><div class="kpi-icon">🏆</div><div class="kpi-label">Kênh tăng mạnh nhất</div><div class="kpi-value" style="font-size:17px;line-height:1.3">${esc(sBest.name)} ${flag(sBest.country)}</div><div class="kpi-sub">+${fmtCompact(sBest.growth)} follow</div></div>` : ''}
+  </div>` : '';
 
   // Gom theo NHÂN VIÊN; trong mỗi người tách tiếp theo QUỐC GIA
   const ownerGroups = {};
