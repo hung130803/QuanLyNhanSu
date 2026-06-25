@@ -159,7 +159,7 @@ select { cursor: pointer; }
 .topbar h2 { font-size: 19px; font-weight: 700; flex: 1; }
 .topbar-right { display: flex; gap: 10px; align-items: center; }
 .menu-toggle { display: none; background: transparent; border: none; color: var(--text); font-size: 22px; cursor: pointer; }
-.view { padding: 26px; max-width: 1280px; width: 100%; }
+.view { padding: 26px; max-width: 1600px; width: 100%; margin: 0 auto; }
 
 .backdrop {
   display: none; position: fixed; inset: 0;
@@ -802,6 +802,15 @@ td { border-top: 1px solid var(--border-soft); }
 .kp-info span { font-size: 11.5px; color: var(--text-dim); }
 .kp-check { color: var(--accent); font-weight: 800; font-size: 16px; }
 .kp-none { border-bottom: 1px dashed var(--border); margin-bottom: 4px; border-radius: 9px 9px 0 0; }
+
+/* Máy tính: làm bảng gọn để VỪA khung (không tràn/cắt cột nút), tận dụng hết chiều rộng */
+@media (min-width: 721px) {
+  th, td { padding: 10px 11px; }
+  /* Cột tên kênh: cắt gọn tên/handle quá dài bằng "…" thay vì đẩy bảng rộng ra */
+  .cell-channel > div { min-width: 0; max-width: 200px; }
+  .cell-channel a, .cell-channel .cell-sub { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cell-channel .cell-url { max-width: 200px; }
+}
 
 body.light th { background: linear-gradient(180deg, #eef2fa, #e6ebf6); }
 body.light .table-wrap, body.light .country-group { box-shadow: var(--shadow-sm); }
