@@ -1521,7 +1521,7 @@ function bulkTiktokForm() {
 // ============ TĂNG TRƯỞNG TỪNG KÊNH ============
 let growthDays = 7;
 let growthLast = null;
-let growthGroupBy = 'country'; // 'country' = theo quốc gia (mặc định, tách nước rõ) | 'owner' = theo nhân viên
+let growthGroupBy = 'owner'; // 'owner' = theo nhân viên (mặc định: ai thêm kênh -> vào nhóm người đó) | 'country' = theo quốc gia
 
 async function renderGrowth() {
   $('#topbar-right').innerHTML = '';
@@ -1573,8 +1573,8 @@ function drawGrowth(data, expBtn) {
   const groupModeTabs = `<div class="groupby-bar">
     <span class="groupby-label">Nhóm theo:</span>
     <div class="filter-tabs" style="margin:0">
-      <div class="filter-tab ${byCountry ? 'active' : ''}" data-groupby="country">🌍 Quốc gia</div>
       <div class="filter-tab ${!byCountry ? 'active' : ''}" data-groupby="owner">👤 Nhân viên</div>
+      <div class="filter-tab ${byCountry ? 'active' : ''}" data-groupby="country">🌍 Quốc gia</div>
     </div>
   </div>`;
 
