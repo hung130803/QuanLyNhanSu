@@ -811,6 +811,12 @@ td { border-top: 1px solid var(--border-soft); }
 .nodata-box summary::-webkit-details-marker { display: none; }
 .nodata-box summary:hover { color: var(--text); border-color: var(--primary); }
 .nodata-box[open] summary { margin-bottom: 10px; }
+/* Trong mỗi nhân viên: mục con theo quốc gia */
+.cc-sub { margin-top: 16px; }
+.cc-sub:first-child { margin-top: 6px; }
+.cc-sub-head { font-size: 13.5px; font-weight: 700; margin-bottom: 8px; padding: 7px 12px; background: linear-gradient(90deg, rgba(124,108,240,.14), transparent 72%); border-radius: 9px; display: flex; align-items: center; gap: 7px; }
+.cc-sub-flag { font-size: 17px; }
+.cc-sub-head .muted { font-weight: 400; }
 
 /* Máy tính: làm bảng gọn để VỪA khung (không tràn/cắt cột nút), tận dụng hết chiều rộng */
 @media (min-width: 721px) {

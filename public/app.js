@@ -1521,7 +1521,7 @@ function bulkTiktokForm() {
 // ============ TĂNG TRƯỞNG TỪNG KÊNH ============
 let growthDays = 7;
 let growthLast = null;
-let growthGroupBy = 'owner'; // 'owner' = theo nhân viên (mặc định: ai thêm kênh -> vào nhóm người đó) | 'country' = theo quốc gia
+let growthOwnerFilter = 'all'; // 'all' = mọi nhân viên | <ownerId> = chỉ xem 1 nhân viên (mỗi người tách theo quốc gia)
 
 async function renderGrowth() {
   $('#topbar-right').innerHTML = '';
@@ -1568,30 +1568,35 @@ function drawGrowth(data, expBtn) {
     ${best && best.growth > 0 ? `<div class="kpi accent"><div class="kpi-icon">🏆</div><div class="kpi-label">Kênh tăng mạnh nhất</div><div class="kpi-value" style="font-size:17px;line-height:1.3">${esc(best.name)} ${flag(best.country)}</div><div class="kpi-sub">+${fmtCompact(best.growth)} follow</div></div>` : ''}
   </div>` : '';
 
-  // Nút chọn cách nhóm: theo quốc gia hay theo nhân viên
-  const byCountry = growthGroupBy === 'country';
-  const groupModeTabs = `<div class="groupby-bar">
-    <span class="groupby-label">Nhóm theo:</span>
+  // "Nhóm theo" = chọn NHÂN VIÊN (Đức, Hùng... + Quản trị viên). Bấm 1 người -> kênh của họ tách theo quốc gia.
+  const ownersMap = {};
+  chans.forEach((c) => {
+    const id = c.owner_id ?? '__none';
+    if (!ownersMap[id]) ownersMap[id] = { id: c.owner_id != null ? String(c.owner_id) : '', name: c.owner || '(chưa rõ)', total: 0, count: 0 };
+    ownersMap[id].total += (c.growth || 0); ownersMap[id].count++;
+  });
+  const ownersTabsList = Object.values(ownersMap).sort((a, b) => b.total - a.total);
+  // Nếu nhân viên đang chọn không còn -> về "Tất cả"
+  if (growthOwnerFilter !== 'all' && !ownersTabsList.some((o) => o.id === String(growthOwnerFilter))) growthOwnerFilter = 'all';
+  const ownerTabs = `<div class="groupby-bar">
+    <span class="groupby-label">Nhóm theo nhân viên:</span>
     <div class="filter-tabs" style="margin:0">
-      <div class="filter-tab ${!byCountry ? 'active' : ''}" data-groupby="owner">👤 Nhân viên</div>
-      <div class="filter-tab ${byCountry ? 'active' : ''}" data-groupby="country">🌍 Quốc gia</div>
+      <div class="filter-tab ${growthOwnerFilter === 'all' ? 'active' : ''}" data-owner="all">👥 Tất cả</div>
+      ${ownersTabsList.map((o) => `<div class="filter-tab ${String(growthOwnerFilter) === o.id ? 'active' : ''}" data-owner="${esc(o.id)}">👤 ${esc(o.name)} <span class="count">${o.count}</span></div>`).join('')}
     </div>
   </div>`;
 
-  // Gom theo nhân viên HOẶC theo quốc gia, mỗi nhóm sắp xếp kênh tăng nhiều nhất lên đầu
-  const groups = {};
-  chans.forEach((c) => {
-    const k = byCountry ? (c.country || '__none') : c.owner;
-    if (!groups[k]) groups[k] = byCountry
-      ? { key: k, label: c.country ? (countryName(c.country) || c.country) : 'Chưa đặt nước', cc: c.country || '', items: [] }
-      : { key: k, label: c.owner, ownerId: c.owner_id, items: [] };
-    groups[k].items.push(c);
+  // Lọc theo nhân viên đang chọn
+  const scoped = growthOwnerFilter === 'all' ? chans : chans.filter((c) => String(c.owner_id ?? '') === String(growthOwnerFilter));
+
+  // Gom theo NHÂN VIÊN; trong mỗi người tách tiếp theo QUỐC GIA
+  const ownerGroups = {};
+  scoped.forEach((c) => {
+    const id = c.owner_id ?? '__none';
+    if (!ownerGroups[id]) ownerGroups[id] = { id: c.owner_id != null ? String(c.owner_id) : '', name: c.owner || '(chưa rõ)', items: [] };
+    ownerGroups[id].items.push(c);
   });
-  const groupList = Object.values(groups).map((g) => {
-    g.items.sort((a, b) => (b.growth ?? -Infinity) - (a.growth ?? -Infinity));
-    g.total = g.items.reduce((a, c) => a + (c.growth || 0), 0);
-    return g;
-  }).sort((a, b) => b.total - a.total);
+  const ownerList = Object.values(ownerGroups).map((g) => { g.total = g.items.reduce((a, c) => a + (c.growth || 0), 0); return g; }).sort((a, b) => b.total - a.total);
 
   const rowHtml = (c, i) => {
     const g = c.growth;
@@ -1599,50 +1604,50 @@ function drawGrowth(data, expBtn) {
     const pct = c.pct != null ? ` <span class="muted">(${c.pct >= 0 ? '+' : ''}${c.pct}%)</span>` : '';
     const rate = (c.perDay != null && days > 1) ? `${c.perDay >= 0 ? '+' : '−'}${fmtCompact(Math.abs(c.perDay))}/ngày` : '—';
     const fire = (i === 0 && g > 0) ? ' <span title="Tăng nhanh nhất nhóm">🚀</span>' : '';
-    const stalled = (g === 0) ? ' <span class="muted" title="Chưa tăng">⚠️</span>' : '';
-    // Khi xem theo QUỐC GIA: hiện thêm "của ai"; theo nhân viên thì khỏi (cả nhóm là của họ)
-    const sub = [c.tiktok_id ? '@' + esc(c.tiktok_id) : '', byCountry && c.owner ? '👤 ' + esc(c.owner) : ''].filter(Boolean).join(' · ');
+    const st = (g === 0) ? ' <span class="muted" title="Chưa tăng">⚠️</span>' : '';
     return `<tr data-ttgo3="${c.id}" class="selectable-row">
       <td class="stt">${i + 1}</td>
-      <td class="cell-main"><b>${esc(c.name)}</b> ${flag(c.country)}${fire}${stalled}<div class="cell-sub">${sub}</div></td>
+      <td class="cell-main"><b>${esc(c.name)}</b> ${flag(c.country)}${fire}${st}<div class="cell-sub">${c.tiktok_id ? '@' + esc(c.tiktok_id) : ''}</div></td>
       <td data-label="Follow"><b class="text-accent">${fmtCompact(c.followers)}</b></td>
       <td data-label="Tăng ${days === 1 ? 'hôm nay' : days + ' ngày'}">${badge}${pct}</td>
       <td data-label="Tốc độ" class="cell-sub nowrap">${rate}</td>
       <td data-label="Video mới">${c.videoGrowth != null ? deltaBadge(c.videoGrowth, false) : '<span class="muted">—</span>'}</td>
     </tr>`;
   };
-
   const thead = `<thead><tr><th>#</th><th>Kênh</th><th>Follow</th><th>Tăng ${days === 1 ? 'hôm nay' : days + ' ngày'}</th><th>Tốc độ</th><th>Video mới</th></tr></thead>`;
   const tableOf = (items) => `<div class="table-wrap cards"><table>${thead}<tbody>${items.map((c, i) => rowHtml(c, i)).join('')}</tbody></table></div>`;
-  const groupsHtml = groupList.map((g) => {
-    const head = byCountry
-      ? `<span class="country-flag" style="font-size:20px">${flag(g.cc)}</span> ${esc(g.label)}`
-      : `👤 ${esc(g.label)}`;
-    const openLink = byCountry
-      ? `<a class="btn-link" data-ttcc="${esc(g.cc || '__none')}" style="float:right;font-weight:400">mở danh sách →</a>`
-      : (g.ownerId != null ? `<a class="btn-link" data-ttuser="${g.ownerId}" style="float:right;font-weight:400">mở danh sách →</a>` : '');
-    // Kênh CÓ dữ liệu hiện trước; kênh CHƯA có dữ liệu gom vào mục thu gọn cho gọn
-    const withD = g.items.filter((c) => c.growth != null);
-    const noD = g.items.filter((c) => c.growth == null);
-    const mainBlock = withD.length ? tableOf(withD) : '<div class="hint" style="padding:8px 2px">Nhóm này chưa kênh nào đủ dữ liệu để tính tăng trưởng.</div>';
+
+  // Mỗi NHÂN VIÊN = 1 panel; bên trong tách theo từng QUỐC GIA (không liên quan nhau)
+  const groupsHtml = ownerList.map((o) => {
+    const withD = o.items.filter((c) => c.growth != null);
+    const noD = o.items.filter((c) => c.growth == null);
+    const ccMap = {};
+    withD.forEach((c) => { const k = c.country || '__none'; if (!ccMap[k]) ccMap[k] = { cc: c.country || '', label: c.country ? (countryName(c.country) || c.country) : 'Chưa đặt nước', items: [] }; ccMap[k].items.push(c); });
+    const ccList = Object.values(ccMap).map((g) => { g.total = g.items.reduce((a, c) => a + (c.growth || 0), 0); g.items.sort((a, b) => (b.growth ?? -Infinity) - (a.growth ?? -Infinity)); return g; }).sort((a, b) => b.total - a.total);
+    const ccHtml = ccList.map((cg) => `
+      <div class="cc-sub">
+        <div class="cc-sub-head"><span class="cc-sub-flag">${flag(cg.cc)}</span> <b>${esc(cg.label)}</b> <span class="muted">· ${cg.items.length} kênh · ${cg.total >= 0 ? '+' : '−'}${fmtCompact(Math.abs(cg.total))} follow</span></div>
+        ${tableOf(cg.items)}
+      </div>`).join('');
+    const body = withD.length ? ccHtml : '<div class="hint" style="padding:8px 2px">Chưa kênh nào đủ dữ liệu để tính tăng trưởng.</div>';
     const noDataBlock = noD.length ? `<details class="nodata-box"><summary>⏳ ${noD.length} kênh chưa đủ dữ liệu (bấm để xem)</summary>${tableOf(noD)}</details>` : '';
     return `<div class="panel">
-      <div class="panel-title">${head} <span class="muted" style="font-weight:400;font-size:13px">· ${g.items.length} kênh · tổng ${g.total >= 0 ? '+' : '−'}${fmtCompact(Math.abs(g.total))} follow</span>
-        ${openLink}</div>
-      ${mainBlock}${noDataBlock}</div>`;
+      <div class="panel-title">👤 ${esc(o.name)} <span class="muted" style="font-weight:400;font-size:13px">· ${o.items.length} kênh · tổng ${o.total >= 0 ? '+' : '−'}${fmtCompact(Math.abs(o.total))} follow</span>
+        ${o.id !== '' ? `<a class="btn-link" data-ttuser="${esc(o.id)}" style="float:right;font-weight:400">mở danh sách →</a>` : ''}</div>
+      ${body}${noDataBlock}</div>`;
   }).join('');
 
   view.innerHTML = `
     <div class="filter-tabs">${tabs}</div>
     ${summaryHtml}
-    ${groupModeTabs}
-    <div class="hint" style="margin-bottom:14px">📈 Kênh tăng follow nhiều nhất lên đầu mỗi nhóm. 🚀 = tăng mạnh nhất nhóm, ⚠️ = chưa tăng. Kênh chưa đủ dữ liệu được gom vào mục thu gọn. Số liệu tự cập nhật mỗi 6 tiếng.</div>
+    ${ownerTabs}
+    <div class="hint" style="margin-bottom:14px">📈 Mỗi nhân viên một mục, bên trong tách theo từng quốc gia. Bấm tên nhân viên ở trên để xem riêng người đó. Kênh chưa đủ dữ liệu được gom vào mục thu gọn. Số liệu tự cập nhật mỗi 6 tiếng.</div>
     ${!chans.length ? '<div class="empty"><div class="empty-icon">📈</div>Chưa có kênh nào.</div>'
       : !hasAnyData ? '<div class="empty"><div class="empty-icon">⏳</div>Cần ít nhất 2 ngày dữ liệu để tính tốc độ phát triển.<br>Hệ thống tự cập nhật mỗi 6 tiếng — quay lại sau 1–2 ngày sẽ thấy đầy đủ.</div>' + groupsHtml
       : groupsHtml}`;
 
   view.querySelectorAll('[data-days]').forEach((t) => t.onclick = () => { growthDays = +t.dataset.days; growthLast = null; renderGrowth(); });
-  view.querySelectorAll('[data-groupby]').forEach((t) => t.onclick = () => { growthGroupBy = t.dataset.groupby; drawGrowth(growthLast || data, expBtn); });
+  view.querySelectorAll('[data-owner]').forEach((t) => t.onclick = () => { growthOwnerFilter = t.dataset.owner; drawGrowth(growthLast || data, expBtn); });
   view.querySelectorAll('[data-ttgo3]').forEach((r) => r.onclick = async (e) => {
     if (e.target.closest('a')) return;
     try { if (!tiktokCache.length) tiktokCache = await api('/tiktok'); const t = tiktokCache.find((x) => x.id == r.dataset.ttgo3); if (t) tiktokDetail(t); } catch (_) {}
