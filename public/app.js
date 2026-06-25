@@ -692,9 +692,8 @@ function drawKeys() {
     const q = keysSearch.toLowerCase();
     list = list.filter((k) => (k.channel_name || '').toLowerCase().includes(q) || (k.url || '').toLowerCase().includes(q));
   }
-  // Sắp xếp: key Ngon lên đầu, rồi Tốt, rồi còn lại — để key ngon luôn dễ thấy
-  const qRank = { ngon: 0, tot: 1, thuong: 2 };
-  list.sort((a, b) => (qRank[a.quality] ?? 3) - (qRank[b.quality] ?? 3));
+  // Sắp xếp: MỚI THÊM lên đầu (key vừa thêm luôn thấy ngay), giữ nguyên thứ tự created_at DESC từ API
+  list.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
 
   // Phân trang (kẹp số trang trước khi dựng thanh điều hướng)
   const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
@@ -1522,7 +1521,7 @@ function bulkTiktokForm() {
 // ============ TĂNG TRƯỞNG TỪNG KÊNH ============
 let growthDays = 7;
 let growthLast = null;
-let growthGroupBy = 'owner'; // 'owner' = theo nhân viên | 'country' = theo quốc gia
+let growthGroupBy = 'country'; // 'country' = theo quốc gia (mặc định, tách nước rõ) | 'owner' = theo nhân viên
 
 async function renderGrowth() {
   $('#topbar-right').innerHTML = '';
@@ -1569,11 +1568,14 @@ function drawGrowth(data, expBtn) {
     ${best && best.growth > 0 ? `<div class="kpi accent"><div class="kpi-icon">🏆</div><div class="kpi-label">Kênh tăng mạnh nhất</div><div class="kpi-value" style="font-size:17px;line-height:1.3">${esc(best.name)} ${flag(best.country)}</div><div class="kpi-sub">+${fmtCompact(best.growth)} follow</div></div>` : ''}
   </div>` : '';
 
-  // Nút chọn cách nhóm: theo nhân viên hay theo quốc gia
+  // Nút chọn cách nhóm: theo quốc gia hay theo nhân viên
   const byCountry = growthGroupBy === 'country';
-  const groupModeTabs = `<div class="filter-tabs" style="margin-bottom:14px">
-    <div class="filter-tab ${!byCountry ? 'active' : ''}" data-groupby="owner">👤 Theo nhân viên</div>
-    <div class="filter-tab ${byCountry ? 'active' : ''}" data-groupby="country">🌍 Theo quốc gia</div>
+  const groupModeTabs = `<div class="groupby-bar">
+    <span class="groupby-label">Nhóm theo:</span>
+    <div class="filter-tabs" style="margin:0">
+      <div class="filter-tab ${byCountry ? 'active' : ''}" data-groupby="country">🌍 Quốc gia</div>
+      <div class="filter-tab ${!byCountry ? 'active' : ''}" data-groupby="owner">👤 Nhân viên</div>
+    </div>
   </div>`;
 
   // Gom theo nhân viên HOẶC theo quốc gia, mỗi nhóm sắp xếp kênh tăng nhiều nhất lên đầu
@@ -1598,9 +1600,11 @@ function drawGrowth(data, expBtn) {
     const rate = (c.perDay != null && days > 1) ? `${c.perDay >= 0 ? '+' : '−'}${fmtCompact(Math.abs(c.perDay))}/ngày` : '—';
     const fire = (i === 0 && g > 0) ? ' <span title="Tăng nhanh nhất nhóm">🚀</span>' : '';
     const stalled = (g === 0) ? ' <span class="muted" title="Chưa tăng">⚠️</span>' : '';
+    // Khi xem theo QUỐC GIA: hiện thêm "của ai"; theo nhân viên thì khỏi (cả nhóm là của họ)
+    const sub = [c.tiktok_id ? '@' + esc(c.tiktok_id) : '', byCountry && c.owner ? '👤 ' + esc(c.owner) : ''].filter(Boolean).join(' · ');
     return `<tr data-ttgo3="${c.id}" class="selectable-row">
       <td class="stt">${i + 1}</td>
-      <td class="cell-main"><b>${esc(c.name)}</b> ${flag(c.country)}${fire}${stalled}<div class="cell-sub">${c.tiktok_id ? '@' + esc(c.tiktok_id) : ''}</div></td>
+      <td class="cell-main"><b>${esc(c.name)}</b> ${flag(c.country)}${fire}${stalled}<div class="cell-sub">${sub}</div></td>
       <td data-label="Follow"><b class="text-accent">${fmtCompact(c.followers)}</b></td>
       <td data-label="Tăng ${days === 1 ? 'hôm nay' : days + ' ngày'}">${badge}${pct}</td>
       <td data-label="Tốc độ" class="cell-sub nowrap">${rate}</td>
@@ -1609,6 +1613,7 @@ function drawGrowth(data, expBtn) {
   };
 
   const thead = `<thead><tr><th>#</th><th>Kênh</th><th>Follow</th><th>Tăng ${days === 1 ? 'hôm nay' : days + ' ngày'}</th><th>Tốc độ</th><th>Video mới</th></tr></thead>`;
+  const tableOf = (items) => `<div class="table-wrap cards"><table>${thead}<tbody>${items.map((c, i) => rowHtml(c, i)).join('')}</tbody></table></div>`;
   const groupsHtml = groupList.map((g) => {
     const head = byCountry
       ? `<span class="country-flag" style="font-size:20px">${flag(g.cc)}</span> ${esc(g.label)}`
@@ -1616,18 +1621,22 @@ function drawGrowth(data, expBtn) {
     const openLink = byCountry
       ? `<a class="btn-link" data-ttcc="${esc(g.cc || '__none')}" style="float:right;font-weight:400">mở danh sách →</a>`
       : (g.ownerId != null ? `<a class="btn-link" data-ttuser="${g.ownerId}" style="float:right;font-weight:400">mở danh sách →</a>` : '');
+    // Kênh CÓ dữ liệu hiện trước; kênh CHƯA có dữ liệu gom vào mục thu gọn cho gọn
+    const withD = g.items.filter((c) => c.growth != null);
+    const noD = g.items.filter((c) => c.growth == null);
+    const mainBlock = withD.length ? tableOf(withD) : '<div class="hint" style="padding:8px 2px">Nhóm này chưa kênh nào đủ dữ liệu để tính tăng trưởng.</div>';
+    const noDataBlock = noD.length ? `<details class="nodata-box"><summary>⏳ ${noD.length} kênh chưa đủ dữ liệu (bấm để xem)</summary>${tableOf(noD)}</details>` : '';
     return `<div class="panel">
       <div class="panel-title">${head} <span class="muted" style="font-weight:400;font-size:13px">· ${g.items.length} kênh · tổng ${g.total >= 0 ? '+' : '−'}${fmtCompact(Math.abs(g.total))} follow</span>
         ${openLink}</div>
-      <div class="table-wrap cards"><table>${thead}<tbody>${g.items.map(rowHtml).join('')}</tbody></table></div>
-    </div>`;
+      ${mainBlock}${noDataBlock}</div>`;
   }).join('');
 
   view.innerHTML = `
     <div class="filter-tabs">${tabs}</div>
     ${summaryHtml}
     ${groupModeTabs}
-    <div class="hint" style="margin-bottom:14px">📈 Sắp xếp kênh tăng follow nhiều nhất lên đầu. 🚀 = tăng nhanh nhất nhóm, ⚠️ = chưa tăng. Số liệu tự cập nhật mỗi 6 tiếng.</div>
+    <div class="hint" style="margin-bottom:14px">📈 Kênh tăng follow nhiều nhất lên đầu mỗi nhóm. 🚀 = tăng mạnh nhất nhóm, ⚠️ = chưa tăng. Kênh chưa đủ dữ liệu được gom vào mục thu gọn. Số liệu tự cập nhật mỗi 6 tiếng.</div>
     ${!chans.length ? '<div class="empty"><div class="empty-icon">📈</div>Chưa có kênh nào.</div>'
       : !hasAnyData ? '<div class="empty"><div class="empty-icon">⏳</div>Cần ít nhất 2 ngày dữ liệu để tính tốc độ phát triển.<br>Hệ thống tự cập nhật mỗi 6 tiếng — quay lại sau 1–2 ngày sẽ thấy đầy đủ.</div>' + groupsHtml
       : groupsHtml}`;

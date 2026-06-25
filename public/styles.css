@@ -803,6 +803,15 @@ td { border-top: 1px solid var(--border-soft); }
 .kp-check { color: var(--accent); font-weight: 800; font-size: 16px; }
 .kp-none { border-bottom: 1px dashed var(--border); margin-bottom: 4px; border-radius: 9px 9px 0 0; }
 
+/* Trang Tăng trưởng: thanh "Nhóm theo" + mục kênh chưa đủ dữ liệu (thu gọn) */
+.groupby-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.groupby-label { font-size: 13px; font-weight: 600; color: var(--text-dim); }
+.nodata-box { margin-top: 10px; }
+.nodata-box summary { cursor: pointer; color: var(--text-dim); font-size: 13px; padding: 7px 10px; border: 1px dashed var(--border); border-radius: 10px; list-style: none; user-select: none; }
+.nodata-box summary::-webkit-details-marker { display: none; }
+.nodata-box summary:hover { color: var(--text); border-color: var(--primary); }
+.nodata-box[open] summary { margin-bottom: 10px; }
+
 /* Máy tính: làm bảng gọn để VỪA khung (không tràn/cắt cột nút), tận dụng hết chiều rộng */
 @media (min-width: 721px) {
   th, td { padding: 10px 11px; }
