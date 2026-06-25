@@ -764,3 +764,36 @@ body.light .kpi.primary { background: linear-gradient(165deg, rgba(124,108,240,.
 body.light .kpi.accent { background: linear-gradient(165deg, rgba(25,211,162,.14), #fff 60%); }
 body.light .kpi.info { background: linear-gradient(165deg, rgba(70,166,255,.13), #fff 60%); }
 body.light .cc-card, body.light .user-card { box-shadow: var(--shadow-sm); }
+
+/* ---- Đồng bộ phong cách cao cấp cho thành phần dùng chung (mọi trang) ---- */
+.table-wrap { border-radius: 16px; background: linear-gradient(180deg, rgba(255,255,255,.022), transparent 38%), var(--card); box-shadow: var(--inset-hi), var(--shadow-sm); }
+th { background: linear-gradient(180deg, #1a2030, #12161f); border-bottom: 1px solid var(--border); }
+tbody tr { transition: background .16s var(--ease-soft); }
+td { border-top: 1px solid var(--border-soft); }
+
+.country-group { border-radius: 18px; background: linear-gradient(180deg, rgba(255,255,255,.022), transparent 28%), var(--card); box-shadow: var(--inset-hi), var(--shadow-sm); }
+.country-head { background: linear-gradient(90deg, rgba(124,108,240,.16), transparent 72%); }
+.country-head:hover { background: linear-gradient(90deg, rgba(124,108,240,.28), transparent 72%); }
+
+.filter-tab { transition: transform .14s var(--ease-soft), background .2s, box-shadow .2s, color .2s; }
+.filter-tab:active { transform: scale(.96); }
+.filter-tab.active { box-shadow: 0 8px 20px -8px rgba(124,108,240,.7); }
+
+.modal { box-shadow: var(--inset-hi), 0 30px 80px -20px rgba(0,0,0,.7); }
+#modal-overlay { backdrop-filter: blur(5px); }
+
+.empty-icon { font-size: 42px; display: block; margin-bottom: 10px; opacity: .55; }
+
+body.light th { background: linear-gradient(180deg, #eef2fa, #e6ebf6); }
+body.light .table-wrap, body.light .country-group { box-shadow: var(--shadow-sm); }
+
+/* Khôi phục cỡ chữ & khoảng cách cho ĐIỆN THOẠI (vì khối cao cấp ở trên ghi đè) */
+@media (max-width: 640px) {
+  .kpi { padding: 15px 15px 15px 17px; border-radius: 14px; }
+  .kpi-value { font-size: 24px; }
+  .kpi-icon { font-size: 24px; }
+  .panel { padding: 16px; border-radius: 16px; }
+  .cc-count { font-size: 22px; }
+  .cc-flag { font-size: 28px; }
+  .cc-grid { grid-template-columns: 1fr; }
+}
