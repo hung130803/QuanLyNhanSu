@@ -1605,9 +1605,10 @@ function drawGrowth(data, expBtn) {
     const rate = (c.perDay != null && days > 1) ? `${c.perDay >= 0 ? '+' : '−'}${fmtCompact(Math.abs(c.perDay))}/ngày` : '—';
     const fire = (i === 0 && g > 0) ? ' <span title="Tăng nhanh nhất nhóm">🚀</span>' : '';
     const st = (g === 0) ? ' <span class="muted" title="Chưa tăng">⚠️</span>' : '';
+    const av = c.avatar ? `<img class="gr-av" src="${esc(c.avatar)}" onerror="this.style.visibility='hidden'">` : '<span class="gr-av gr-av-empty">📱</span>';
     return `<tr data-ttgo3="${c.id}" class="selectable-row">
       <td class="stt">${i + 1}</td>
-      <td class="cell-main"><b>${esc(c.name)}</b> ${flag(c.country)}${fire}${st}<div class="cell-sub">${c.tiktok_id ? '@' + esc(c.tiktok_id) : ''}</div></td>
+      <td class="cell-main"><div class="gr-chan">${av}<div class="gr-chan-info"><b>${esc(c.name)}</b> ${flag(c.country)}${fire}${st}<div class="cell-sub">${c.tiktok_id ? '@' + esc(c.tiktok_id) : ''}</div></div></div></td>
       <td data-label="Follow"><b class="text-accent">${fmtCompact(c.followers)}</b></td>
       <td data-label="Tăng ${days === 1 ? 'hôm nay' : days + ' ngày'}">${badge}${pct}</td>
       <td data-label="Tốc độ" class="cell-sub nowrap">${rate}</td>

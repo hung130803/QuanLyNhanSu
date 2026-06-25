@@ -932,7 +932,7 @@ app.get('/api/report/growth', auth, (req, res) => {
   const scope = isAdmin ? '' : ` AND (t.assigned_to=${me} OR t.added_by=${me})`;
   const cutoff = `date('now','+7 hours','-${days} days')`;
   const rows = db.prepare(`
-    SELECT t.id, t.name, t.tiktok_id, t.country, t.followers, t.video_count, t.status, t.url,
+    SELECT t.id, t.name, t.tiktok_id, t.country, t.followers, t.video_count, t.status, t.url, t.avatar,
            COALESCE(t.assigned_to, t.added_by) AS owner_id,
            COALESCE(ua.name, ub.name, '(chưa rõ)') AS owner,
            (SELECT s.followers   FROM tiktok_snapshots s WHERE s.channel_id=t.id AND s.snap_date <= ${cutoff} ORDER BY s.snap_date DESC LIMIT 1) AS base_f,
@@ -957,7 +957,7 @@ app.get('/api/report/growth', auth, (req, res) => {
     else if (c.snap_count >= 2) baseV = c.first_v;
     const videoGrowth = baseV != null ? c.video_count - baseV : null;
     const perDay = growth != null ? Math.round(growth / days) : null;
-    return { id: c.id, name: c.name, tiktok_id: c.tiktok_id, country: c.country, url: c.url, status: c.status,
+    return { id: c.id, name: c.name, tiktok_id: c.tiktok_id, country: c.country, url: c.url, status: c.status, avatar: c.avatar,
       owner: c.owner, owner_id: c.owner_id, followers: c.followers, growth, pct, videoGrowth, perDay };
   });
   res.json({ days, channels });
